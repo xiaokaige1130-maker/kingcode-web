@@ -1,0 +1,170 @@
+﻿<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>OmniCode Web</title>
+    <link rel="stylesheet" href="/styles.css">
+  </head>
+  <body>
+    <div class="shell">
+      <aside class="panel rail">
+        <div class="brand">
+          <p class="eyebrow">Agent Console</p>
+          <h1>OmniCode Web</h1>
+          <p class="lede">A provider-agnostic coding assistant with local files, prompts, and a browser UI.</p>
+        </div>
+
+        <section class="card">
+          <div class="section-head">
+            <h2>Profiles</h2>
+            <button id="new-profile" class="ghost">New</button>
+          </div>
+
+          <label>
+            <span>Active Profile</span>
+            <select id="profile-select"></select>
+          </label>
+
+          <label>
+            <span>Name</span>
+            <input id="profile-name" type="text">
+          </label>
+
+          <label>
+            <span>Type</span>
+            <select id="profile-type">
+              <option value="openai-compatible">OpenAI Compatible</option>
+              <option value="anthropic">Anthropic</option>
+              <option value="gemini">Gemini</option>
+              <option value="generic-json">Generic JSON API</option>
+            </select>
+          </label>
+
+          <label>
+            <span>Base URL</span>
+            <input id="profile-base-url" type="text">
+          </label>
+
+          <label>
+            <span>Path</span>
+            <input id="profile-path" type="text">
+          </label>
+
+          <label>
+            <span>Model</span>
+            <input id="profile-model" type="text">
+          </label>
+
+          <label>
+            <span>API Key</span>
+            <input id="profile-api-key" type="password">
+          </label>
+
+          <label>
+            <span>Headers Template</span>
+            <textarea id="profile-headers" rows="5"></textarea>
+          </label>
+
+          <label>
+            <span>Body Template</span>
+            <textarea id="profile-body" rows="7"></textarea>
+          </label>
+
+          <label>
+            <span>Response Path</span>
+            <input id="profile-response-path" type="text" placeholder="choices.0.message.content">
+          </label>
+
+          <div class="button-row">
+            <button id="save-config">Save Config</button>
+            <button id="delete-profile" class="ghost">Delete</button>
+          </div>
+        </section>
+
+        <section class="card">
+          <div class="section-head">
+            <h2>Workspace</h2>
+            <button id="refresh-tree" class="ghost">Refresh</button>
+          </div>
+
+          <label>
+            <span>Root Path</span>
+            <input id="workspace-root" type="text">
+          </label>
+
+          <label>
+            <span>System Prompt</span>
+            <textarea id="system-prompt" rows="5"></textarea>
+          </label>
+
+          <div class="tree-path" id="tree-path">.</div>
+          <div id="file-tree" class="tree"></div>
+        </section>
+      </aside>
+
+      <main class="panel stage">
+        <section class="hero">
+          <div>
+            <p class="eyebrow">Workflow Presets</p>
+            <h2>Commands, agents, skills, and tools in one surface.</h2>
+          </div>
+          <div class="chip-row">
+            <button class="chip active" data-workflow="analyze">Analyze</button>
+            <button class="chip" data-workflow="plan">Plan</button>
+            <button class="chip" data-workflow="review">Review</button>
+            <button class="chip" data-workflow="implement">Implement</button>
+          </div>
+        </section>
+
+        <section class="chat card">
+          <div id="messages" class="messages"></div>
+          <form id="chat-form" class="composer">
+            <textarea id="message-input" rows="5" placeholder="Ask the assistant about the current codebase, selected files, or command output."></textarea>
+            <div class="composer-bar">
+              <div class="hint">Selected files are injected into the prompt context automatically.</div>
+              <button type="submit">Send</button>
+            </div>
+          </form>
+        </section>
+      </main>
+
+      <aside class="panel inspector">
+        <section class="card">
+          <div class="section-head">
+            <h2>File Editor</h2>
+            <label class="context-toggle">
+              <input id="include-file" type="checkbox">
+              <span>Include in AI context</span>
+            </label>
+          </div>
+          <div id="editor-path" class="tree-path">No file selected</div>
+          <textarea id="file-editor" rows="24" placeholder="Open a file from the workspace tree."></textarea>
+          <div class="button-row">
+            <button id="save-file">Save File</button>
+          </div>
+        </section>
+
+        <section class="card">
+          <div class="section-head">
+            <h2>Command Deck</h2>
+          </div>
+          <textarea id="command-input" rows="4" placeholder="git status"></textarea>
+          <div class="button-row">
+            <button id="run-command">Run Command</button>
+          </div>
+          <pre id="command-output" class="terminal"></pre>
+        </section>
+      </aside>
+    </div>
+
+    <template id="message-template">
+      <article class="message">
+        <div class="message-role"></div>
+        <pre class="message-body"></pre>
+      </article>
+    </template>
+
+    <script src="/app.js"></script>
+  </body>
+</html>
