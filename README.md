@@ -120,8 +120,16 @@ KingCode also includes a first-pass deployment panel for local or current-server
   - cloning a Git repository into the active workspace scope
   - running an install command such as `npm install` or `pip install -r requirements.txt`
   - creating a PM2 service for common Node.js start modes
+  - creating a systemd service on Linux
+  - loading PM2, systemd, or Docker Compose logs
+  - running common Docker Compose actions
   - updating an existing project by running `git pull`, install, build, and PM2 restart
   - reading basic project and PM2 status
+
+- Presets:
+  - `Node Web`
+  - `Python Bot`
+  - `Docker Compose`
 
 The deployment panel is designed for the machine KingCode is running on. It does not add SSH or remote host management.
 

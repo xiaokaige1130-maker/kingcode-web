@@ -8,8 +8,11 @@ const { loadConfig, saveConfig } = require("./lib/config");
 const {
   cloneRepository,
   createPm2Service,
+  createSystemdService,
   installDependencies,
   readDeployStatus,
+  readServiceLogs,
+  runDockerCompose,
   updateProject
 } = require("./lib/deploy");
 const { commitAll, pushCurrentBranch, readGitSnapshot } = require("./lib/git");
@@ -399,6 +402,67 @@ async function handleApi(request, response, requestUrl) {
 
       if (!result.ok) {
         sendJson(response, 400, { error: result.output || "Failed to create PM2 service." });
+        return;
+      }
+
+      sendJson(response, 200, {
+        ...result,
+        scopePath: scope.path,
+        scopeRoot: scope.root
+      });
+      return;
+    }
+
+    if (request.method === "POST" && requestUrl.pathname === "/api/deploy/systemd") {
+      const config = loadConfig();
+      const body = await parseBody(request);
+      const scope = resolveScope(config.workspaceRoot, readScopePath(requestUrl, body));
+      const result = await createSystemdService(scope.root, body);
+
+      if (!result.ok) {
+        sendJson(response, 400, { error: result.output || "Failed to create systemd service." });
+        return;
+      }
+
+      sendJson(response, 200, {
+        ...result,
+        scopePath: scope.path,
+        scopeRoot: scope.root
+      });
+      return;
+    }
+
+    if (request.method === "GET" && requestUrl.pathname === "/api/deploy/logs") {
+      const config = loadConfig();
+      const scope = resolveScope(config.workspaceRoot, readScopePath(requestUrl));
+      const result = await readServiceLogs(scope.root, {
+        projectPath: requestUrl.searchParams.get("projectPath") || ".",
+        serviceName: requestUrl.searchParams.get("serviceName") || "",
+        logSource: requestUrl.searchParams.get("logSource") || "pm2",
+        lines: requestUrl.searchParams.get("lines") || "80"
+      });
+
+      if (!result.ok) {
+        sendJson(response, 400, { error: result.output || "Failed to read logs." });
+        return;
+      }
+
+      sendJson(response, 200, {
+        ...result,
+        scopePath: scope.path,
+        scopeRoot: scope.root
+      });
+      return;
+    }
+
+    if (request.method === "POST" && requestUrl.pathname === "/api/deploy/docker") {
+      const config = loadConfig();
+      const body = await parseBody(request);
+      const scope = resolveScope(config.workspaceRoot, readScopePath(requestUrl, body));
+      const result = await runDockerCompose(scope.root, body.projectPath, body.composeAction);
+
+      if (!result.ok) {
+        sendJson(response, 400, { error: result.output || "Failed to run docker compose action." });
         return;
       }
 

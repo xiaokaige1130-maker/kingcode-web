@@ -200,6 +200,21 @@
             <button id="deploy-status" class="ghost">Status</button>
           </div>
 
+          <div class="inline-grid">
+            <label>
+              <span>Preset</span>
+              <select id="deploy-preset">
+                <option value="node-web">Node Web</option>
+                <option value="python-bot">Python Bot</option>
+                <option value="docker-compose">Docker Compose</option>
+              </select>
+            </label>
+            <label>
+              <span>&nbsp;</span>
+              <button id="deploy-apply-preset" class="ghost" type="button">Apply Preset</button>
+            </label>
+          </div>
+
           <label>
             <span>Repo URL</span>
             <input id="deploy-repo-url" type="text" placeholder="https://github.com/owner/repo.git">
@@ -248,6 +263,7 @@
                 <option value="pnpm-start">pnpm start</option>
                 <option value="pnpm-script">pnpm run &lt;script&gt;</option>
                 <option value="node-script">node &lt;file&gt;</option>
+                <option value="python-script">python3 &lt;file&gt;</option>
               </select>
             </label>
           </div>
@@ -263,7 +279,44 @@
           </div>
 
           <div class="button-row">
+            <button id="deploy-systemd" class="ghost">Create systemd</button>
             <button id="deploy-update">Update Project</button>
+          </div>
+
+          <div class="inline-grid">
+            <label>
+              <span>Log Source</span>
+              <select id="deploy-log-source">
+                <option value="pm2">PM2</option>
+                <option value="systemd">systemd</option>
+                <option value="docker-compose">Docker Compose</option>
+              </select>
+            </label>
+            <label>
+              <span>Log Lines</span>
+              <input id="deploy-log-lines" type="text" value="80">
+            </label>
+          </div>
+
+          <div class="button-row">
+            <button id="deploy-logs" class="ghost">Load Logs</button>
+          </div>
+
+          <div class="inline-grid">
+            <label>
+              <span>Compose Action</span>
+              <select id="deploy-compose-action">
+                <option value="up">up -d</option>
+                <option value="down">down</option>
+                <option value="pull">pull</option>
+                <option value="restart">restart</option>
+                <option value="logs">logs</option>
+              </select>
+            </label>
+            <label>
+              <span>&nbsp;</span>
+              <button id="deploy-compose" class="ghost" type="button">Run Compose</button>
+            </label>
           </div>
 
           <div id="deploy-summary" class="hint">Deploy actions run inside the active workspace scope.</div>

@@ -40,6 +40,8 @@ const els = {
   gitSummary: document.querySelector("#git-summary"),
   gitStatusOutput: document.querySelector("#git-status-output"),
   gitCommitMessage: document.querySelector("#git-commit-message"),
+  deployPreset: document.querySelector("#deploy-preset"),
+  deployApplyPreset: document.querySelector("#deploy-apply-preset"),
   deployRepoUrl: document.querySelector("#deploy-repo-url"),
   deployTargetPath: document.querySelector("#deploy-target-path"),
   deployBranch: document.querySelector("#deploy-branch"),
@@ -49,6 +51,9 @@ const els = {
   deployServiceName: document.querySelector("#deploy-service-name"),
   deployServiceMode: document.querySelector("#deploy-service-mode"),
   deployServiceTarget: document.querySelector("#deploy-service-target"),
+  deployLogSource: document.querySelector("#deploy-log-source"),
+  deployLogLines: document.querySelector("#deploy-log-lines"),
+  deployComposeAction: document.querySelector("#deploy-compose-action"),
   deploySummary: document.querySelector("#deploy-summary"),
   deployOutput: document.querySelector("#deploy-output"),
   messageTemplate: document.querySelector("#message-template"),
@@ -68,6 +73,9 @@ const els = {
   deployClone: document.querySelector("#deploy-clone"),
   deployInstall: document.querySelector("#deploy-install"),
   deployService: document.querySelector("#deploy-service"),
+  deploySystemd: document.querySelector("#deploy-systemd"),
+  deployLogs: document.querySelector("#deploy-logs"),
+  deployCompose: document.querySelector("#deploy-compose"),
   deployUpdate: document.querySelector("#deploy-update")
 };
 
@@ -120,6 +128,38 @@ function renderDeployResult(data) {
     ? `Deploy target: ${location} (${root})`
     : `Deploy target: ${location}`;
   els.deployOutput.textContent = data.output || "(no output)";
+}
+
+function applyDeployPreset() {
+  const preset = els.deployPreset.value;
+
+  if (preset === "python-bot") {
+    els.deployInstallCommand.value = "pip install -r requirements.txt";
+    els.deployBuildCommand.value = "";
+    els.deployServiceMode.value = "python-script";
+    if (!els.deployServiceTarget.value.trim()) {
+      els.deployServiceTarget.value = "main.py";
+    }
+    els.deployLogSource.value = "pm2";
+    return;
+  }
+
+  if (preset === "docker-compose") {
+    els.deployInstallCommand.value = "";
+    els.deployBuildCommand.value = "";
+    els.deployServiceMode.value = "node-script";
+    els.deployServiceTarget.value = "";
+    els.deployLogSource.value = "docker-compose";
+    return;
+  }
+
+  els.deployInstallCommand.value = "npm install";
+  els.deployBuildCommand.value = "npm run build";
+  els.deployServiceMode.value = "npm-start";
+  if (!els.deployServiceTarget.value.trim()) {
+    els.deployServiceTarget.value = "";
+  }
+  els.deployLogSource.value = "pm2";
 }
 
 function renderProfileOptions() {
@@ -524,7 +564,12 @@ function deployPayload() {
     buildCommand: els.deployBuildCommand.value.trim(),
     serviceName: els.deployServiceName.value.trim(),
     serviceMode: els.deployServiceMode.value,
-    serviceTarget: els.deployServiceTarget.value.trim()
+    serviceTarget: els.deployServiceTarget.value.trim(),
+    logSource: els.deployLogSource.value,
+    lines: els.deployLogLines.value.trim(),
+    composeAction: els.deployComposeAction.value,
+    installNow: true,
+    runtime: els.deployLogSource.value === "systemd" ? "systemd" : "pm2"
   };
 }
 
@@ -557,6 +602,55 @@ async function loadDeployStatus() {
     renderScopeSummary(data.scopeRoot || "");
     renderDeployResult(data);
     addMessage("system", "Deployment status loaded.");
+  } catch (error) {
+    addMessage("system", error.message);
+    els.deployOutput.textContent = error.message;
+  }
+}
+
+async function createSystemdUnit() {
+  try {
+    const data = await request("/api/deploy/systemd", {
+      method: "POST",
+      body: JSON.stringify(deployPayload())
+    });
+    renderScopeSummary(data.scopeRoot || "");
+    renderDeployResult(data);
+    addMessage("system", "systemd service processed.");
+  } catch (error) {
+    addMessage("system", error.message);
+    els.deployOutput.textContent = error.message;
+  }
+}
+
+async function loadDeployLogs() {
+  try {
+    const query = new URLSearchParams({
+      scopePath: state.scopePath || ".",
+      projectPath: els.deployProjectPath.value.trim() || ".",
+      serviceName: els.deployServiceName.value.trim(),
+      logSource: els.deployLogSource.value,
+      lines: els.deployLogLines.value.trim() || "80"
+    });
+    const data = await request(`/api/deploy/logs?${query.toString()}`);
+    renderScopeSummary(data.scopeRoot || "");
+    renderDeployResult(data);
+    addMessage("system", "Logs loaded.");
+  } catch (error) {
+    addMessage("system", error.message);
+    els.deployOutput.textContent = error.message;
+  }
+}
+
+async function runComposeAction() {
+  try {
+    const data = await request("/api/deploy/docker", {
+      method: "POST",
+      body: JSON.stringify(deployPayload())
+    });
+    renderScopeSummary(data.scopeRoot || "");
+    renderDeployResult(data);
+    addMessage("system", "Docker Compose command finished.");
   } catch (error) {
     addMessage("system", error.message);
     els.deployOutput.textContent = error.message;
@@ -620,6 +714,7 @@ function bindEvents() {
   });
   els.gitCommit.addEventListener("click", commitGitChanges);
   els.gitPush.addEventListener("click", pushGitChanges);
+  els.deployApplyPreset.addEventListener("click", applyDeployPreset);
   els.deployStatus.addEventListener("click", loadDeployStatus);
   els.deployClone.addEventListener("click", () => {
     runDeployAction("/api/deploy/clone", deployPayload(), "Repository cloned.");
@@ -630,6 +725,9 @@ function bindEvents() {
   els.deployService.addEventListener("click", () => {
     runDeployAction("/api/deploy/service", deployPayload(), "PM2 service created.");
   });
+  els.deploySystemd.addEventListener("click", createSystemdUnit);
+  els.deployLogs.addEventListener("click", loadDeployLogs);
+  els.deployCompose.addEventListener("click", runComposeAction);
   els.deployUpdate.addEventListener("click", () => {
     runDeployAction("/api/deploy/update", deployPayload(), "Project updated.");
   });
@@ -666,6 +764,7 @@ async function init() {
   renderProfileOptions();
   renderProfileForm();
   bindEvents();
+  applyDeployPreset();
   await loadTree(".");
   await loadSkills();
   try {
