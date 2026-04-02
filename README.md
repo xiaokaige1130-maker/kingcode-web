@@ -123,6 +123,10 @@ KingCode also includes a first-pass deployment panel for local or current-server
   - creating a systemd service on Linux
   - loading PM2, systemd, or Docker Compose logs
   - running common Docker Compose actions
+  - running a health check against a target URL
+  - reading recent deployment history stored by KingCode
+  - reading recent Git commits for a deployed project
+  - rolling a project back to a chosen Git commit
   - updating an existing project by running `git pull`, install, build, and PM2 restart
   - reading basic project and PM2 status
 
@@ -132,6 +136,8 @@ KingCode also includes a first-pass deployment panel for local or current-server
   - `Docker Compose`
 
 The deployment panel is designed for the machine KingCode is running on. It does not add SSH or remote host management.
+
+Rollback currently uses `git reset --hard <commit>` inside the selected project path, then optionally reinstalls, rebuilds, and restarts the service. Use it only when that repository state is safe to discard locally.
 
 ## Provider model
 

@@ -53,6 +53,8 @@ const els = {
   deployServiceTarget: document.querySelector("#deploy-service-target"),
   deployLogSource: document.querySelector("#deploy-log-source"),
   deployLogLines: document.querySelector("#deploy-log-lines"),
+  deployHealthUrl: document.querySelector("#deploy-health-url"),
+  deployRollbackCommit: document.querySelector("#deploy-rollback-commit"),
   deployComposeAction: document.querySelector("#deploy-compose-action"),
   deploySummary: document.querySelector("#deploy-summary"),
   deployOutput: document.querySelector("#deploy-output"),
@@ -75,6 +77,10 @@ const els = {
   deployService: document.querySelector("#deploy-service"),
   deploySystemd: document.querySelector("#deploy-systemd"),
   deployLogs: document.querySelector("#deploy-logs"),
+  deployHealth: document.querySelector("#deploy-health"),
+  deployHistory: document.querySelector("#deploy-history"),
+  deployCommits: document.querySelector("#deploy-commits"),
+  deployRollback: document.querySelector("#deploy-rollback"),
   deployCompose: document.querySelector("#deploy-compose"),
   deployUpdate: document.querySelector("#deploy-update")
 };
@@ -141,6 +147,9 @@ function applyDeployPreset() {
       els.deployServiceTarget.value = "main.py";
     }
     els.deployLogSource.value = "pm2";
+    if (!els.deployHealthUrl.value.trim()) {
+      els.deployHealthUrl.value = "http://127.0.0.1:8000/health";
+    }
     return;
   }
 
@@ -150,6 +159,9 @@ function applyDeployPreset() {
     els.deployServiceMode.value = "node-script";
     els.deployServiceTarget.value = "";
     els.deployLogSource.value = "docker-compose";
+    if (!els.deployHealthUrl.value.trim()) {
+      els.deployHealthUrl.value = "http://127.0.0.1:3000";
+    }
     return;
   }
 
@@ -160,6 +172,9 @@ function applyDeployPreset() {
     els.deployServiceTarget.value = "";
   }
   els.deployLogSource.value = "pm2";
+  if (!els.deployHealthUrl.value.trim()) {
+    els.deployHealthUrl.value = "http://127.0.0.1:3001/api/health";
+  }
 }
 
 function renderProfileOptions() {
@@ -567,6 +582,8 @@ function deployPayload() {
     serviceTarget: els.deployServiceTarget.value.trim(),
     logSource: els.deployLogSource.value,
     lines: els.deployLogLines.value.trim(),
+    healthUrl: els.deployHealthUrl.value.trim(),
+    commit: els.deployRollbackCommit.value.trim(),
     composeAction: els.deployComposeAction.value,
     installNow: true,
     runtime: els.deployLogSource.value === "systemd" ? "systemd" : "pm2"
@@ -657,6 +674,81 @@ async function runComposeAction() {
   }
 }
 
+async function runHealthCheck() {
+  try {
+    const query = new URLSearchParams({
+      url: els.deployHealthUrl.value.trim(),
+      timeout: "8000"
+    });
+    const data = await request(`/api/deploy/health?${query.toString()}`);
+    els.deploySummary.textContent = `Health check: ${data.statusCode}`;
+    els.deployOutput.textContent = data.output || "(no output)";
+    addMessage("system", "Health check passed.");
+  } catch (error) {
+    addMessage("system", error.message);
+    els.deployOutput.textContent = error.message;
+  }
+}
+
+async function loadDeployHistory() {
+  try {
+    const data = await request("/api/deploy/history?limit=20");
+    const lines = (data.entries || []).map((entry) => {
+      return [
+        `${entry.timestamp} [${entry.action}] ${entry.ok ? "OK" : "FAIL"}`,
+        entry.summary || "",
+        entry.projectPath ? `Project: ${entry.projectPath}` : "",
+        entry.fromCommit ? `From: ${entry.fromCommit}` : "",
+        entry.toCommit ? `To: ${entry.toCommit}` : ""
+      ].filter(Boolean).join("\n");
+    });
+    els.deploySummary.textContent = "Deployment history";
+    els.deployOutput.textContent = lines.length > 0 ? lines.join("\n\n") : "(no history)";
+    addMessage("system", "Deployment history loaded.");
+  } catch (error) {
+    addMessage("system", error.message);
+    els.deployOutput.textContent = error.message;
+  }
+}
+
+async function loadRecentCommits() {
+  try {
+    const query = new URLSearchParams({
+      scopePath: state.scopePath || ".",
+      projectPath: els.deployProjectPath.value.trim() || ".",
+      limit: "15"
+    });
+    const data = await request(`/api/deploy/commits?${query.toString()}`);
+    renderScopeSummary(data.scopeRoot || "");
+    renderDeployResult(data);
+    addMessage("system", "Recent commits loaded.");
+  } catch (error) {
+    addMessage("system", error.message);
+    els.deployOutput.textContent = error.message;
+  }
+}
+
+async function rollbackDeploy() {
+  const commit = els.deployRollbackCommit.value.trim();
+  if (!commit) {
+    addMessage("system", "Enter a rollback commit first.");
+    return;
+  }
+
+  try {
+    const data = await request("/api/deploy/rollback", {
+      method: "POST",
+      body: JSON.stringify(deployPayload())
+    });
+    renderScopeSummary(data.scopeRoot || "");
+    renderDeployResult(data);
+    addMessage("system", "Rollback completed.");
+  } catch (error) {
+    addMessage("system", error.message);
+    els.deployOutput.textContent = error.message;
+  }
+}
+
 async function submitChat(event) {
   event.preventDefault();
   const content = els.messageInput.value.trim();
@@ -727,6 +819,10 @@ function bindEvents() {
   });
   els.deploySystemd.addEventListener("click", createSystemdUnit);
   els.deployLogs.addEventListener("click", loadDeployLogs);
+  els.deployHealth.addEventListener("click", runHealthCheck);
+  els.deployHistory.addEventListener("click", loadDeployHistory);
+  els.deployCommits.addEventListener("click", loadRecentCommits);
+  els.deployRollback.addEventListener("click", rollbackDeploy);
   els.deployCompose.addEventListener("click", runComposeAction);
   els.deployUpdate.addEventListener("click", () => {
     runDeployAction("/api/deploy/update", deployPayload(), "Project updated.");

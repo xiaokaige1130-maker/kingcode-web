@@ -10,9 +10,13 @@ const {
   createPm2Service,
   createSystemdService,
   installDependencies,
+  readCommitHistory,
   readDeployStatus,
+  readDeployHistory,
   readServiceLogs,
+  rollbackProject,
   runDockerCompose,
+  runHealthCheck,
   updateProject
 } = require("./lib/deploy");
 const { commitAll, pushCurrentBranch, readGitSnapshot } = require("./lib/git");
@@ -455,6 +459,44 @@ async function handleApi(request, response, requestUrl) {
       return;
     }
 
+    if (request.method === "GET" && requestUrl.pathname === "/api/deploy/history") {
+      const limit = requestUrl.searchParams.get("limit") || "20";
+      sendJson(response, 200, {
+        entries: readDeployHistory(limit)
+      });
+      return;
+    }
+
+    if (request.method === "GET" && requestUrl.pathname === "/api/deploy/commits") {
+      const config = loadConfig();
+      const scope = resolveScope(config.workspaceRoot, readScopePath(requestUrl));
+      const result = await readCommitHistory(
+        scope.root,
+        requestUrl.searchParams.get("projectPath") || ".",
+        requestUrl.searchParams.get("limit") || "15"
+      );
+
+      if (!result.ok) {
+        sendJson(response, 400, { error: result.output || "Failed to read commit history." });
+        return;
+      }
+
+      sendJson(response, 200, {
+        ...result,
+        scopePath: scope.path,
+        scopeRoot: scope.root
+      });
+      return;
+    }
+
+    if (request.method === "GET" && requestUrl.pathname === "/api/deploy/health") {
+      const targetUrl = requestUrl.searchParams.get("url") || "";
+      const timeout = requestUrl.searchParams.get("timeout") || "8000";
+      const result = await runHealthCheck(targetUrl, Number(timeout) || 8000);
+      sendJson(response, result.ok ? 200 : 400, result);
+      return;
+    }
+
     if (request.method === "POST" && requestUrl.pathname === "/api/deploy/docker") {
       const config = loadConfig();
       const body = await parseBody(request);
@@ -463,6 +505,25 @@ async function handleApi(request, response, requestUrl) {
 
       if (!result.ok) {
         sendJson(response, 400, { error: result.output || "Failed to run docker compose action." });
+        return;
+      }
+
+      sendJson(response, 200, {
+        ...result,
+        scopePath: scope.path,
+        scopeRoot: scope.root
+      });
+      return;
+    }
+
+    if (request.method === "POST" && requestUrl.pathname === "/api/deploy/rollback") {
+      const config = loadConfig();
+      const body = await parseBody(request);
+      const scope = resolveScope(config.workspaceRoot, readScopePath(requestUrl, body));
+      const result = await rollbackProject(scope.root, body);
+
+      if (!result.ok) {
+        sendJson(response, 400, { error: result.output || "Failed to roll back project." });
         return;
       }
 

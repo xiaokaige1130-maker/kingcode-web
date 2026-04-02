@@ -304,6 +304,31 @@
 
           <div class="inline-grid">
             <label>
+              <span>Health URL</span>
+              <input id="deploy-health-url" type="text" placeholder="http://127.0.0.1:3001/api/health">
+            </label>
+            <label>
+              <span>&nbsp;</span>
+              <button id="deploy-health" class="ghost" type="button">Health Check</button>
+            </label>
+          </div>
+
+          <div class="button-row">
+            <button id="deploy-history" class="ghost">History</button>
+            <button id="deploy-commits" class="ghost">Recent Commits</button>
+          </div>
+
+          <label>
+            <span>Rollback Commit</span>
+            <input id="deploy-rollback-commit" type="text" placeholder="例如：a1b2c3d">
+          </label>
+
+          <div class="button-row">
+            <button id="deploy-rollback" class="ghost">Rollback</button>
+          </div>
+
+          <div class="inline-grid">
+            <label>
               <span>Compose Action</span>
               <select id="deploy-compose-action">
                 <option value="up">up -d</option>
