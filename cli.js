@@ -6,7 +6,7 @@ const { stdin, stdout, stderr } = require("process");
 
 const { loadConfig } = require("./lib/config");
 const { commitAll, pushCurrentBranch, readGitSnapshot } = require("./lib/git");
-const { sendChatStream } = require("./lib/providers");
+const { sendChat, sendChatStream } = require("./lib/providers");
 const { listSkills, loadSkillsByIds } = require("./lib/skills");
 const {
   assertInsideWorkspace,
@@ -20,6 +20,18 @@ const {
 } = require("./lib/workspace");
 
 const WORKFLOWS = new Set(["analyze", "plan", "review", "implement"]);
+const MAX_AUTONOMOUS_ACTIONS = 5;
+const MAX_AUTONOMOUS_ROUNDS = 4;
+const DANGEROUS_COMMAND_PATTERNS = [
+  /\bsudo\b/i,
+  /\brm\s+-rf\b/i,
+  /\bgit\s+reset\s+--hard\b/i,
+  /\bshutdown\b/i,
+  /\breboot\b/i,
+  /\bmkfs\b/i,
+  /\bdd\b/i,
+  /\bpoweroff\b/i
+];
 
 function workflowPrompt(workflowId) {
   switch (workflowId) {
@@ -85,6 +97,239 @@ function runWorkspaceCommand(workspaceRoot, command) {
   });
 }
 
+function stripMarkdownFence(text) {
+  const trimmed = String(text || "").trim();
+  const match = trimmed.match(/^```(?:json)?\s*([\s\S]*?)\s*```$/i);
+  return match ? match[1].trim() : trimmed;
+}
+
+function tryParseJson(text) {
+  try {
+    return JSON.parse(stripMarkdownFence(text));
+  } catch (error) {
+    const source = String(text || "");
+    const start = source.indexOf("{");
+    const end = source.lastIndexOf("}");
+    if (start !== -1 && end !== -1 && end > start) {
+      try {
+        return JSON.parse(source.slice(start, end + 1));
+      } catch (nestedError) {
+        return null;
+      }
+    }
+    return null;
+  }
+}
+
+function isDangerousCommand(command) {
+  const normalized = String(command || "").trim();
+  if (!normalized) {
+    return false;
+  }
+  return DANGEROUS_COMMAND_PATTERNS.some((pattern) => pattern.test(normalized));
+}
+
+function buildAutonomousMessages(config, state, userInput, executionLog = "") {
+  const selectedFilePaths = [...state.selectedFiles];
+  const contextBundle = buildContextBundle(config, state.scopePath, selectedFilePaths, state.recentCommandOutput);
+  const skillBundle = buildSkillBundle(config, state.scopePath, state.selectedSkillIds);
+  const promptPrefix = workflowPrompt(state.workflowId);
+
+  return [
+    { role: "system", content: config.systemPrompt },
+    ...(skillBundle ? [{
+      role: "system",
+      content: `Apply the following skills when relevant.\n\n${skillBundle}`
+    }] : []),
+    {
+      role: "system",
+      content: [
+        "You are operating KingCode CLI with direct workspace actions.",
+        "Decide whether the user's request requires action or only a chat reply.",
+        "Return ONLY valid JSON with this schema:",
+        '{"mode":"chat|act|done","assistant":"short reply","actions":[{"type":"run","command":"..."},{"type":"write","path":"relative/path","content":"..."},{"type":"read","path":"relative/path"},{"type":"ls","path":"relative/path"},{"type":"include","path":"relative/path"}]}',
+        "Rules:",
+        "- Use mode=act only when the task needs real work in the workspace.",
+        "- Use mode=done when the task is complete after reviewing the latest action results.",
+        "- Keep actions minimal and ordered.",
+        "- Use only relative file paths inside the current workspace scope.",
+        "- Never use sudo, rm -rf, git reset --hard, shutdown, reboot, poweroff, mkfs, or dd.",
+        `- Use at most ${MAX_AUTONOMOUS_ACTIONS} actions.`,
+        "- Prefer read/ls/include before write when context is missing.",
+        "- If no real action is needed, return mode=chat with actions=[].",
+        "- If recent action results are sufficient to finish, return mode=done with actions=[]."
+      ].join("\n")
+    },
+    {
+      role: "user",
+      content: [
+        "Use the following workspace context when deciding what to do.",
+        contextBundle,
+        promptPrefix ? `Workflow instruction: ${promptPrefix}` : "",
+        executionLog ? `Execution log so far:\n${executionLog}` : ""
+      ].filter(Boolean).join("\n\n")
+    },
+    ...state.messages,
+    { role: "user", content: userInput }
+  ];
+}
+
+async function planAutonomousTurn(config, state, userInput, executionLog = "") {
+  let raw = await sendChat(config, state.profileId, buildAutonomousMessages(config, state, userInput, executionLog));
+  let parsed = tryParseJson(raw);
+  if (!parsed) {
+    raw = await sendChat(config, state.profileId, [
+      ...buildAutonomousMessages(config, state, userInput, executionLog),
+      {
+        role: "user",
+        content: "Your previous reply was invalid. Return ONLY one JSON object matching the required schema. No prose."
+      }
+    ]);
+    parsed = tryParseJson(raw);
+  }
+  if (!parsed || typeof parsed !== "object") {
+    return null;
+  }
+
+  const mode = parsed.mode === "act" || parsed.mode === "done" ? parsed.mode : "chat";
+  const assistant = typeof parsed.assistant === "string" ? parsed.assistant.trim() : "";
+  const actions = Array.isArray(parsed.actions)
+    ? parsed.actions
+      .filter((action) => action && typeof action === "object" && typeof action.type === "string")
+      .slice(0, MAX_AUTONOMOUS_ACTIONS)
+    : [];
+
+  return { mode, assistant, actions };
+}
+
+async function executeAutonomousPlan(config, state, userInput, plan) {
+  const scope = resolveScope(config.workspaceRoot, state.scopePath);
+  const logs = [];
+
+  for (const [index, action] of plan.actions.entries()) {
+    if (action.type === "read") {
+      const targetPath = String(action.path || "").trim();
+      if (!targetPath) {
+        logs.push(`Action ${index + 1}: skipped read with empty path.`);
+        continue;
+      }
+
+      const content = readFile(scope.root, targetPath);
+      state.selectedFiles.add(normalizeRelativePath(targetPath));
+      logs.push([
+        `Action ${index + 1}: read ${targetPath}`,
+        content
+      ].join("\n"));
+      continue;
+    }
+
+    if (action.type === "ls") {
+      const targetPath = String(action.path || ".").trim() || ".";
+      const listing = listDirectory(scope.root, targetPath);
+      logs.push([
+        `Action ${index + 1}: ls ${targetPath}`,
+        listing.entries.map((entry) => `${entry.type === "directory" ? "[D]" : "[F]"} ${entry.path}`).join("\n") || "(empty)"
+      ].join("\n"));
+      continue;
+    }
+
+    if (action.type === "include") {
+      const targetPath = String(action.path || "").trim();
+      if (!targetPath) {
+        logs.push(`Action ${index + 1}: skipped include with empty path.`);
+        continue;
+      }
+
+      readFile(scope.root, targetPath);
+      state.selectedFiles.add(normalizeRelativePath(targetPath));
+      logs.push(`Action ${index + 1}: included ${targetPath}`);
+      continue;
+    }
+
+    if (action.type === "run") {
+      const command = String(action.command || "").trim();
+      if (!command) {
+        logs.push(`Action ${index + 1}: skipped empty command.`);
+        continue;
+      }
+      if (isDangerousCommand(command)) {
+        logs.push(`Action ${index + 1}: blocked dangerous command: ${command}`);
+        continue;
+      }
+
+      const result = await runWorkspaceCommand(scope.root, command);
+      state.recentCommandOutput = result.combined;
+      logs.push([
+        `Action ${index + 1}: run ${command}`,
+        `Exit code: ${result.code}`,
+        result.combined || "(no output)"
+      ].join("\n"));
+      continue;
+    }
+
+    if (action.type === "write") {
+      const targetPath = String(action.path || "").trim();
+      if (!targetPath) {
+        logs.push(`Action ${index + 1}: skipped write with empty path.`);
+        continue;
+      }
+
+      const content = typeof action.content === "string" ? action.content : "";
+      writeFile(scope.root, targetPath, content);
+      logs.push(`Action ${index + 1}: wrote ${targetPath} (${Buffer.byteLength(content, "utf8")} bytes)`);
+      continue;
+    }
+
+    logs.push(`Action ${index + 1}: unsupported action type ${action.type}`);
+  }
+
+  const summary = plan.assistant || "Executed planned workspace actions.";
+  printBlock("Auto", summary);
+  printBlock("Auto Actions", logs.join("\n\n") || "(no actions)");
+  state.messages.push({ role: "user", content: userInput });
+  state.messages.push({
+    role: "assistant",
+    content: [summary, logs.join("\n\n")].filter(Boolean).join("\n\n")
+  });
+
+  return [summary, logs.join("\n\n")].filter(Boolean).join("\n\n");
+}
+
+async function runAutonomousTurn(config, state, userInput) {
+  let executionLog = "";
+
+  for (let round = 0; round < MAX_AUTONOMOUS_ROUNDS; round += 1) {
+    const plan = await planAutonomousTurn(config, state, userInput, executionLog);
+    if (!plan) {
+      return false;
+    }
+
+    if (plan.mode === "chat" || (plan.mode === "act" && plan.actions.length === 0)) {
+      return false;
+    }
+
+    if (plan.mode === "done") {
+      const summary = plan.assistant || "Task completed.";
+      printBlock("Auto", summary);
+      state.messages.push({ role: "user", content: userInput });
+      state.messages.push({ role: "assistant", content: summary });
+      return true;
+    }
+
+    const stepSummary = await executeAutonomousPlan(config, state, userInput, plan);
+    executionLog = [
+      executionLog,
+      `Round ${round + 1}:`,
+      stepSummary
+    ].filter(Boolean).join("\n\n");
+  }
+
+  printBlock("Auto", "Reached autonomous action limit. Continue manually if more steps are needed.");
+  state.messages.push({ role: "user", content: userInput });
+  state.messages.push({ role: "assistant", content: executionLog || "Reached autonomous action limit." });
+  return true;
+}
+
 function printBlock(title, content) {
   stdout.write(`\n[${title}]\n`);
   stdout.write(`${content || "(empty)"}\n`);
@@ -114,6 +359,7 @@ function printHelp() {
     "/git status               Show Git branch, remotes, and working tree status",
     "/git commit <message>     Stage all repo changes and create a commit",
     "/git push                 Push the current branch using existing upstream",
+    "Plain input              Auto-runs safe read/ls/write/command actions when useful",
     "/clearcmd                 Clear saved command output from chat context",
     "/exit                     Quit"
   ].join("\n"));
@@ -443,6 +689,10 @@ async function handleSlashCommand(rl, config, state, line) {
 }
 
 async function sendCliChat(config, state, userInput) {
+  if (await runAutonomousTurn(config, state, userInput)) {
+    return;
+  }
+
   const selectedFilePaths = [...state.selectedFiles];
   const contextBundle = buildContextBundle(config, state.scopePath, selectedFilePaths, state.recentCommandOutput);
   const skillBundle = buildSkillBundle(config, state.scopePath, state.selectedSkillIds);
