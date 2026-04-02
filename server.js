@@ -6,6 +6,7 @@ const { URL } = require("url");
 
 const { loadConfig, saveConfig } = require("./lib/config");
 const { sendChat } = require("./lib/providers");
+const { listSkills, loadSkillsByIds } = require("./lib/skills");
 const {
   assertInsideWorkspace,
   buildTreeLines,
@@ -142,6 +143,21 @@ function buildContextBundle(config, selectedFilePaths, recentCommandOutput) {
   return sections.join("\n\n");
 }
 
+function buildSkillBundle(config, selectedSkillIds) {
+  const skills = loadSkillsByIds(config, selectedSkillIds);
+  if (skills.length === 0) {
+    return "";
+  }
+
+  return skills.map((skill) => {
+    return [
+      `SKILL: ${skill.name}`,
+      `Source: ${skill.sourceType}`,
+      skill.content
+    ].join("\n");
+  }).join("\n\n");
+}
+
 async function handleApi(request, response, requestUrl) {
   try {
     if (request.method === "GET" && requestUrl.pathname === "/api/health") {
@@ -151,6 +167,12 @@ async function handleApi(request, response, requestUrl) {
 
     if (request.method === "GET" && requestUrl.pathname === "/api/config") {
       sendJson(response, 200, loadConfig());
+      return;
+    }
+
+    if (request.method === "GET" && requestUrl.pathname === "/api/skills") {
+      const config = loadConfig();
+      sendJson(response, 200, { skills: listSkills(config) });
       return;
     }
 
@@ -204,12 +226,18 @@ async function handleApi(request, response, requestUrl) {
       const config = loadConfig();
       const body = await parseBody(request);
       const selectedFilePaths = Array.isArray(body.selectedFilePaths) ? body.selectedFilePaths : [];
+      const selectedSkillIds = Array.isArray(body.selectedSkillIds) ? body.selectedSkillIds : [];
       const recentCommandOutput = typeof body.recentCommandOutput === "string" ? body.recentCommandOutput : "";
       const userMessages = Array.isArray(body.messages) ? body.messages : [];
       const contextBundle = buildContextBundle(config, selectedFilePaths, recentCommandOutput);
+      const skillBundle = buildSkillBundle(config, selectedSkillIds);
       const promptPrefix = workflowPrompt(body.workflowId);
       const finalMessages = [
         { role: "system", content: config.systemPrompt },
+        ...(skillBundle ? [{
+          role: "system",
+          content: `Apply the following skills when relevant.\n\n${skillBundle}`
+        }] : []),
         {
           role: "user",
           content: [

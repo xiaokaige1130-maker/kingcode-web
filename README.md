@@ -59,6 +59,10 @@ CLI commands:
 - `/profiles`
 - `/profile <id>`
 - `/workflow <id>`
+- `/skills`
+- `/skillinfo <id>`
+- `/skill <id>`
+- `/unskill <id>`
 - `/tree [path]`
 - `/open <path>`
 - `/include <path>`
@@ -66,6 +70,18 @@ CLI commands:
 - `/run <command>`
 
 Plain text input sends a chat request using the active workflow plus any included files and recent command output.
+
+For `openai-compatible` providers such as `DeepSeek`, the CLI prints tokens incrementally instead of waiting for the full response.
+
+## Skills
+
+KingCode can discover skills from:
+
+- `./skills/<name>/SKILL.md`
+- `<workspace>/skills/<name>/SKILL.md`
+- `<workspace>/.claude/skills/<name>/SKILL.md`
+
+Web mode lets you select skills from the sidebar. CLI mode supports `/skills`, `/skill <id>`, and `/unskill <id>`.
 
 ## Provider model
 

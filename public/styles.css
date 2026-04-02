@@ -183,7 +183,8 @@ label span,
 }
 
 .messages,
-.tree {
+.tree,
+.skill-list {
   overflow: auto;
 }
 
@@ -239,6 +240,45 @@ label span,
   gap: 0.45rem;
   max-height: 340px;
   padding-right: 0.2rem;
+}
+
+.skill-list {
+  display: grid;
+  gap: 0.6rem;
+  max-height: 220px;
+  margin-top: 0.9rem;
+  padding-right: 0.2rem;
+}
+
+.skill-row {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 0.8rem;
+  align-items: start;
+  padding: 0.8rem 0.9rem;
+  border-radius: 16px;
+  border: 1px solid var(--line);
+  background: rgba(255, 251, 245, 0.88);
+}
+
+.skill-row input {
+  width: auto;
+  margin-top: 0.2rem;
+}
+
+.skill-meta {
+  display: grid;
+  gap: 0.2rem;
+}
+
+.skill-title {
+  font-weight: 600;
+}
+
+.skill-desc,
+.skill-source {
+  color: var(--muted);
+  font-size: 0.92rem;
 }
 
 .tree-entry {

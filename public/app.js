@@ -1,7 +1,9 @@
-﻿const state = {
+const state = {
   config: null,
   currentPath: ".",
   currentFilePath: "",
+  availableSkills: [],
+  selectedSkillIds: new Set(),
   selectedFiles: new Set(),
   messages: [],
   workflowId: "analyze",
@@ -23,6 +25,7 @@ const els = {
   systemPrompt: document.querySelector("#system-prompt"),
   treePath: document.querySelector("#tree-path"),
   fileTree: document.querySelector("#file-tree"),
+  skillsList: document.querySelector("#skills-list"),
   messages: document.querySelector("#messages"),
   messageInput: document.querySelector("#message-input"),
   chatForm: document.querySelector("#chat-form"),
@@ -36,6 +39,7 @@ const els = {
   deleteProfile: document.querySelector("#delete-profile"),
   newProfile: document.querySelector("#new-profile"),
   refreshTree: document.querySelector("#refresh-tree"),
+  refreshSkills: document.querySelector("#refresh-skills"),
   saveFile: document.querySelector("#save-file"),
   runCommand: document.querySelector("#run-command")
 };
@@ -125,6 +129,53 @@ function addMessage(role, content) {
   renderMessages();
 }
 
+function renderSkills() {
+  els.skillsList.innerHTML = "";
+
+  if (!Array.isArray(state.availableSkills) || state.availableSkills.length === 0) {
+    const empty = document.createElement("div");
+    empty.className = "hint";
+    empty.textContent = "No skills found.";
+    els.skillsList.append(empty);
+    return;
+  }
+
+  state.availableSkills.forEach((skill) => {
+    const row = document.createElement("label");
+    row.className = "skill-row";
+
+    const checkbox = document.createElement("input");
+    checkbox.type = "checkbox";
+    checkbox.checked = state.selectedSkillIds.has(skill.id);
+    checkbox.addEventListener("change", () => {
+      if (checkbox.checked) {
+        state.selectedSkillIds.add(skill.id);
+      } else {
+        state.selectedSkillIds.delete(skill.id);
+      }
+    });
+
+    const meta = document.createElement("div");
+    meta.className = "skill-meta";
+
+    const title = document.createElement("div");
+    title.className = "skill-title";
+    title.textContent = skill.id;
+
+    const source = document.createElement("div");
+    source.className = "skill-source";
+    source.textContent = `Source: ${skill.sourceType}`;
+
+    const desc = document.createElement("div");
+    desc.className = "skill-desc";
+    desc.textContent = skill.description || "No description.";
+
+    meta.append(title, source, desc);
+    row.append(checkbox, meta);
+    els.skillsList.append(row);
+  });
+}
+
 function normalizePath(inputPath) {
   return inputPath.replace(/\\/g, "/");
 }
@@ -187,6 +238,17 @@ async function loadTree(relativePath = ".") {
   renderTree(data);
 }
 
+async function loadSkills() {
+  const data = await request("/api/skills");
+  state.availableSkills = Array.isArray(data.skills) ? data.skills : [];
+  state.selectedSkillIds.forEach((skillId) => {
+    if (!state.availableSkills.some((skill) => skill.id === skillId)) {
+      state.selectedSkillIds.delete(skillId);
+    }
+  });
+  renderSkills();
+}
+
 function syncIncludeCheckbox() {
   els.includeFile.checked = state.currentFilePath ? state.selectedFiles.has(state.currentFilePath) : false;
 }
@@ -211,6 +273,7 @@ async function saveConfig() {
   renderProfileForm();
   addMessage("system", "Configuration saved.");
   await loadTree(".");
+  await loadSkills();
 }
 
 function newProfile() {
@@ -289,6 +352,7 @@ async function submitChat(event) {
   const payload = {
     profileId: state.config.activeProfileId,
     workflowId: state.workflowId,
+    selectedSkillIds: [...state.selectedSkillIds],
     selectedFilePaths: [...state.selectedFiles],
     recentCommandOutput: state.recentCommandOutput,
     messages: state.messages.filter((message) => message.role === "user" || message.role === "assistant")
@@ -316,6 +380,7 @@ function bindEvents() {
   els.newProfile.addEventListener("click", newProfile);
   els.deleteProfile.addEventListener("click", deleteProfile);
   els.refreshTree.addEventListener("click", () => loadTree(state.currentPath));
+  els.refreshSkills.addEventListener("click", loadSkills);
   els.saveFile.addEventListener("click", saveCurrentFile);
   els.runCommand.addEventListener("click", runCommand);
   els.chatForm.addEventListener("submit", submitChat);
@@ -350,6 +415,7 @@ async function init() {
   renderProfileForm();
   bindEvents();
   await loadTree(".");
+  await loadSkills();
   addMessage("system", "KingCode is ready.");
 }
 

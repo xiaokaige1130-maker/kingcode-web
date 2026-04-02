@@ -1,10 +1,12 @@
+#!/usr/bin/env node
 const path = require("path");
 const readline = require("readline/promises");
 const { exec } = require("child_process");
 const { stdin, stdout, stderr } = require("process");
 
 const { loadConfig } = require("./lib/config");
-const { sendChat } = require("./lib/providers");
+const { sendChatStream } = require("./lib/providers");
+const { listSkills, loadSkillsByIds } = require("./lib/skills");
 const {
   assertInsideWorkspace,
   buildTreeLines,
@@ -83,6 +85,10 @@ function printHelp() {
     "/profile <id>             Switch active profile for this session",
     "/workflows                List workflows",
     "/workflow <id>            Set workflow: analyze | plan | review | implement",
+    "/skills                   List discovered skills",
+    "/skillinfo <id>           Show one skill's details and content",
+    "/skill <id>               Enable a skill for chat context",
+    "/unskill <id>             Disable a skill",
     "/tree [path]              Show a shallow directory tree",
     "/ls [path]                List a single directory",
     "/open <path>              Print a file",
@@ -98,6 +104,21 @@ function printHelp() {
 
 function getPrompt(state) {
   return `kingcode:${state.workflowId}:${state.profileId}> `;
+}
+
+function buildSkillBundle(config, selectedSkillIds) {
+  const skills = loadSkillsByIds(config, [...selectedSkillIds]);
+  if (skills.length === 0) {
+    return "";
+  }
+
+  return skills.map((skill) => {
+    return [
+      `SKILL: ${skill.name}`,
+      `Source: ${skill.sourceType}`,
+      skill.content
+    ].join("\n");
+  }).join("\n\n");
 }
 
 async function readMultiline(rl, firstPrompt, continuationPrompt) {
@@ -168,6 +189,55 @@ async function handleSlashCommand(rl, config, state, line) {
       }
       state.workflowId = nextWorkflow;
       printBlock("Workflow", `Switched to ${nextWorkflow}`);
+      return;
+    }
+    case "/skills": {
+      const skills = listSkills(config);
+      printBlock("Skills", skills.length > 0 ? skills.map((skill) => {
+        const marker = state.selectedSkillIds.has(skill.id) ? "*" : " ";
+        const suffix = skill.description ? ` - ${skill.description}` : "";
+        return `${marker} ${skill.id}${suffix}`;
+      }).join("\n") : "No skills found. Supported roots: ./skills, <workspace>/skills, <workspace>/.claude/skills");
+      return;
+    }
+    case "/skillinfo": {
+      const skillId = args[0];
+      if (!skillId) {
+        throw new Error("Usage: /skillinfo <id>");
+      }
+      const skill = loadSkillsByIds(config, [skillId])[0];
+      if (!skill) {
+        throw new Error(`Unknown skill: ${skillId}`);
+      }
+      printBlock(`Skill ${skill.id}`, [
+        `Name: ${skill.name}`,
+        `Source: ${skill.sourceType}`,
+        `Path: ${skill.path}`,
+        "",
+        skill.content
+      ].join("\n"));
+      return;
+    }
+    case "/skill": {
+      const skillId = args[0];
+      if (!skillId) {
+        throw new Error("Usage: /skill <id>");
+      }
+      const known = listSkills(config).find((skill) => skill.id === skillId);
+      if (!known) {
+        throw new Error(`Unknown skill: ${skillId}`);
+      }
+      state.selectedSkillIds.add(skillId);
+      printBlock("Enabled Skills", [...state.selectedSkillIds].join("\n"));
+      return;
+    }
+    case "/unskill": {
+      const skillId = args[0];
+      if (!skillId) {
+        throw new Error("Usage: /unskill <id>");
+      }
+      state.selectedSkillIds.delete(skillId);
+      printBlock("Enabled Skills", state.selectedSkillIds.size > 0 ? [...state.selectedSkillIds].join("\n") : "(none)");
       return;
     }
     case "/tree": {
@@ -249,9 +319,14 @@ async function handleSlashCommand(rl, config, state, line) {
 async function sendCliChat(config, state, userInput) {
   const selectedFilePaths = [...state.selectedFiles];
   const contextBundle = buildContextBundle(config, selectedFilePaths, state.recentCommandOutput);
+  const skillBundle = buildSkillBundle(config, state.selectedSkillIds);
   const promptPrefix = workflowPrompt(state.workflowId);
   const finalMessages = [
     { role: "system", content: config.systemPrompt },
+    ...(skillBundle ? [{
+      role: "system",
+      content: `Apply the following skills when relevant.\n\n${skillBundle}`
+    }] : []),
     {
       role: "user",
       content: [
@@ -264,10 +339,25 @@ async function sendCliChat(config, state, userInput) {
     { role: "user", content: userInput }
   ];
 
-  const content = await sendChat(config, state.profileId, finalMessages);
+  stdout.write("\n[Assistant]\n");
+
+  let streamedAny = false;
+  const content = await sendChatStream(config, state.profileId, finalMessages, {
+    onToken(token) {
+      if (token) {
+        streamedAny = true;
+        stdout.write(token);
+      }
+    }
+  });
+
+  if (!streamedAny) {
+    stdout.write(content || "(empty)");
+  }
+
+  stdout.write("\n");
   state.messages.push({ role: "user", content: userInput });
   state.messages.push({ role: "assistant", content });
-  printBlock("Assistant", content);
 }
 
 async function main() {
@@ -276,6 +366,7 @@ async function main() {
   const state = {
     profileId: config.activeProfileId,
     workflowId: "analyze",
+    selectedSkillIds: new Set(),
     selectedFiles: new Set(),
     recentCommandOutput: "",
     messages: []
