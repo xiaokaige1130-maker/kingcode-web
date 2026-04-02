@@ -1,5 +1,6 @@
 const state = {
   config: null,
+  scopePath: ".",
   currentPath: ".",
   currentFilePath: "",
   availableSkills: [],
@@ -22,6 +23,8 @@ const els = {
   profileBody: document.querySelector("#profile-body"),
   profileResponsePath: document.querySelector("#profile-response-path"),
   workspaceRoot: document.querySelector("#workspace-root"),
+  scopePath: document.querySelector("#scope-path"),
+  scopeSummary: document.querySelector("#scope-summary"),
   systemPrompt: document.querySelector("#system-prompt"),
   treePath: document.querySelector("#tree-path"),
   fileTree: document.querySelector("#file-tree"),
@@ -38,6 +41,8 @@ const els = {
   saveConfig: document.querySelector("#save-config"),
   deleteProfile: document.querySelector("#delete-profile"),
   newProfile: document.querySelector("#new-profile"),
+  applyScope: document.querySelector("#apply-scope"),
+  resetScope: document.querySelector("#reset-scope"),
   refreshTree: document.querySelector("#refresh-tree"),
   refreshSkills: document.querySelector("#refresh-skills"),
   saveFile: document.querySelector("#save-file"),
@@ -61,6 +66,18 @@ async function request(url, options = {}) {
 
 function activeProfile() {
   return state.config.profiles.find((profile) => profile.id === state.config.activeProfileId);
+}
+
+function scopeQuery(relativePath = ".") {
+  return `path=${encodeURIComponent(relativePath)}&scopePath=${encodeURIComponent(state.scopePath || ".")}`;
+}
+
+function renderScopeSummary(scopeRoot = "") {
+  const scopePath = state.scopePath || ".";
+  els.scopePath.value = scopePath;
+  els.scopeSummary.textContent = scopeRoot
+    ? `Scope: ${scopePath} (${scopeRoot})`
+    : `Scope: ${scopePath}`;
 }
 
 function renderProfileOptions() {
@@ -180,6 +197,19 @@ function normalizePath(inputPath) {
   return inputPath.replace(/\\/g, "/");
 }
 
+function resetScopeSessionState() {
+  state.currentPath = ".";
+  state.currentFilePath = "";
+  state.selectedFiles.clear();
+  state.messages = [];
+  state.recentCommandOutput = "";
+  els.editorPath.textContent = "No file selected";
+  els.fileEditor.value = "";
+  els.commandOutput.textContent = "";
+  syncIncludeCheckbox();
+  renderMessages();
+}
+
 function renderTree(data) {
   state.currentPath = data.path;
   els.treePath.textContent = data.path;
@@ -234,12 +264,16 @@ function renderTree(data) {
 }
 
 async function loadTree(relativePath = ".") {
-  const data = await request(`/api/workspace/tree?path=${encodeURIComponent(relativePath)}`);
+  const data = await request(`/api/workspace/tree?${scopeQuery(relativePath)}`);
+  state.scopePath = data.scopePath || state.scopePath;
+  renderScopeSummary(data.scopeRoot || "");
   renderTree(data);
 }
 
 async function loadSkills() {
-  const data = await request("/api/skills");
+  const data = await request(`/api/skills?scopePath=${encodeURIComponent(state.scopePath || ".")}`);
+  state.scopePath = data.scopePath || state.scopePath;
+  renderScopeSummary(data.scopeRoot || "");
   state.availableSkills = Array.isArray(data.skills) ? data.skills : [];
   state.selectedSkillIds.forEach((skillId) => {
     if (!state.availableSkills.some((skill) => skill.id === skillId)) {
@@ -254,7 +288,9 @@ function syncIncludeCheckbox() {
 }
 
 async function openFile(relativePath) {
-  const data = await request(`/api/workspace/file?path=${encodeURIComponent(relativePath)}`);
+  const data = await request(`/api/workspace/file?${scopeQuery(relativePath)}`);
+  state.scopePath = data.scopePath || state.scopePath;
+  renderScopeSummary(data.scopeRoot || "");
   state.currentFilePath = normalizePath(relativePath);
   els.editorPath.textContent = state.currentFilePath;
   els.fileEditor.value = data.content;
@@ -269,8 +305,11 @@ async function saveConfig() {
     method: "POST",
     body: JSON.stringify(state.config)
   });
+  state.scopePath = ".";
+  resetScopeSessionState();
   renderProfileOptions();
   renderProfileForm();
+  renderScopeSummary(state.config.workspaceRoot);
   addMessage("system", "Configuration saved.");
   await loadTree(".");
   await loadSkills();
@@ -317,10 +356,49 @@ async function saveCurrentFile() {
     method: "POST",
     body: JSON.stringify({
       path: state.currentFilePath,
-      content: els.fileEditor.value
+      content: els.fileEditor.value,
+      scopePath: state.scopePath
     })
   });
   addMessage("system", `Saved ${state.currentFilePath}`);
+}
+
+async function applyScope(nextScopePath = els.scopePath.value.trim() || ".") {
+  const previousScopePath = state.scopePath;
+  const previousMessages = [...state.messages];
+  const previousSelectedFiles = new Set(state.selectedFiles);
+  const previousSelectedSkillIds = new Set(state.selectedSkillIds);
+  const previousRecentCommandOutput = state.recentCommandOutput;
+  const previousCurrentFilePath = state.currentFilePath;
+  const previousCurrentPath = state.currentPath;
+  const previousEditorValue = els.fileEditor.value;
+  const previousCommandOutput = els.commandOutput.textContent;
+
+  state.scopePath = nextScopePath;
+  resetScopeSessionState();
+
+  try {
+    await loadTree(".");
+    await loadSkills();
+    addMessage("system", `Scope switched to ${state.scopePath}.`);
+  } catch (error) {
+    state.scopePath = previousScopePath;
+    state.messages = previousMessages;
+    state.selectedFiles = previousSelectedFiles;
+    state.selectedSkillIds = previousSelectedSkillIds;
+    state.recentCommandOutput = previousRecentCommandOutput;
+    state.currentFilePath = previousCurrentFilePath;
+    state.currentPath = previousCurrentPath;
+    els.fileEditor.value = previousEditorValue;
+    els.commandOutput.textContent = previousCommandOutput;
+    els.editorPath.textContent = previousCurrentFilePath || "No file selected";
+    renderMessages();
+    syncIncludeCheckbox();
+    await loadTree(previousCurrentPath || ".");
+    await loadSkills();
+    renderScopeSummary();
+    throw error;
+  }
 }
 
 async function runCommand() {
@@ -331,10 +409,14 @@ async function runCommand() {
 
   const result = await request("/api/command", {
     method: "POST",
-    body: JSON.stringify({ command })
+    body: JSON.stringify({
+      command,
+      scopePath: state.scopePath
+    })
   });
 
   state.recentCommandOutput = result.combined;
+  renderScopeSummary(result.scopeRoot || "");
   els.commandOutput.textContent = result.combined || "(no output)";
   addMessage("system", `Command finished with code ${result.code}.`);
 }
@@ -352,6 +434,7 @@ async function submitChat(event) {
   const payload = {
     profileId: state.config.activeProfileId,
     workflowId: state.workflowId,
+    scopePath: state.scopePath,
     selectedSkillIds: [...state.selectedSkillIds],
     selectedFilePaths: [...state.selectedFiles],
     recentCommandOutput: state.recentCommandOutput,
@@ -363,6 +446,7 @@ async function submitChat(event) {
       method: "POST",
       body: JSON.stringify(payload)
     });
+    renderScopeSummary(data.scopeRoot || "");
     addMessage("assistant", data.content);
   } catch (error) {
     addMessage("system", error.message);
@@ -379,6 +463,12 @@ function bindEvents() {
   els.saveConfig.addEventListener("click", saveConfig);
   els.newProfile.addEventListener("click", newProfile);
   els.deleteProfile.addEventListener("click", deleteProfile);
+  els.applyScope.addEventListener("click", () => {
+    applyScope().catch((error) => addMessage("system", error.message));
+  });
+  els.resetScope.addEventListener("click", () => {
+    applyScope(".").catch((error) => addMessage("system", error.message));
+  });
   els.refreshTree.addEventListener("click", () => loadTree(state.currentPath));
   els.refreshSkills.addEventListener("click", loadSkills);
   els.saveFile.addEventListener("click", saveCurrentFile);
@@ -409,7 +499,9 @@ function bindEvents() {
 
 async function init() {
   state.config = await request("/api/config");
+  state.scopePath = ".";
   els.workspaceRoot.value = state.config.workspaceRoot;
+  renderScopeSummary(state.config.workspaceRoot);
   els.systemPrompt.value = state.config.systemPrompt;
   renderProfileOptions();
   renderProfileForm();

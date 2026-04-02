@@ -12,7 +12,9 @@ const {
   buildTreeLines,
   collectFiles,
   listDirectory,
+  normalizeRelativePath,
   readFile,
+  resolveScope,
   writeFile
 } = require("./lib/workspace");
 
@@ -33,13 +35,23 @@ function workflowPrompt(workflowId) {
   }
 }
 
-function buildContextBundle(config, selectedFilePaths, recentCommandOutput) {
-  const workspaceRoot = config.workspaceRoot;
-  const tree = buildTreeLines(workspaceRoot, ".", 2).join("\n");
-  const files = collectFiles(workspaceRoot, selectedFilePaths);
+function buildScopedConfig(config, scopePath) {
+  const scope = resolveScope(config.workspaceRoot, scopePath);
+  return {
+    ...config,
+    workspaceRoot: scope.root
+  };
+}
+
+function buildContextBundle(config, scopePath, selectedFilePaths, recentCommandOutput) {
+  const scope = resolveScope(config.workspaceRoot, scopePath);
+  const tree = buildTreeLines(scope.root, ".", 2).join("\n");
+  const files = collectFiles(scope.root, selectedFilePaths);
   const fileBlocks = files.map((file) => `FILE: ${file.path}\n${file.content}`).join("\n\n");
   const sections = [
-    `Workspace root: ${workspaceRoot}`,
+    `Workspace root: ${config.workspaceRoot}`,
+    `Scope path: ${scope.path}`,
+    `Scope root: ${scope.root}`,
     `Workspace tree:\n${tree}`
   ];
 
@@ -85,6 +97,7 @@ function printHelp() {
     "/profile <id>             Switch active profile for this session",
     "/workflows                List workflows",
     "/workflow <id>            Set workflow: analyze | plan | review | implement",
+    "/scope [path]             Show or set the active scope within the workspace root",
     "/skills                   List discovered skills",
     "/skillinfo <id>           Show one skill's details and content",
     "/skill <id>               Enable a skill for chat context",
@@ -103,11 +116,14 @@ function printHelp() {
 }
 
 function getPrompt(state) {
-  return `kingcode:${state.workflowId}:${state.profileId}> `;
+  const scopeSuffix = state.scopePath && state.scopePath !== "."
+    ? `:${state.scopePath}`
+    : "";
+  return `kingcode:${state.workflowId}:${state.profileId}${scopeSuffix}> `;
 }
 
-function buildSkillBundle(config, selectedSkillIds) {
-  const skills = loadSkillsByIds(config, [...selectedSkillIds]);
+function buildSkillBundle(config, scopePath, selectedSkillIds) {
+  const skills = loadSkillsByIds(buildScopedConfig(config, scopePath), [...selectedSkillIds]);
   if (skills.length === 0) {
     return "";
   }
@@ -140,6 +156,15 @@ function relativeLabel(workspaceRoot, targetPath) {
   return path.relative(workspaceRoot, targetPath).replace(/\\/g, "/") || ".";
 }
 
+function syncScopeSkills(config, state) {
+  const knownSkills = new Set(listSkills(buildScopedConfig(config, state.scopePath)).map((skill) => skill.id));
+  for (const skillId of [...state.selectedSkillIds]) {
+    if (!knownSkills.has(skillId)) {
+      state.selectedSkillIds.delete(skillId);
+    }
+  }
+}
+
 async function handleSlashCommand(rl, config, state, line) {
   const trimmed = line.trim();
   const [rawCommand, ...rawArgs] = trimmed.split(" ");
@@ -151,15 +176,19 @@ async function handleSlashCommand(rl, config, state, line) {
     case "/help":
       printHelp();
       return;
-    case "/status":
+    case "/status": {
+      const scope = resolveScope(config.workspaceRoot, state.scopePath);
       printBlock("Status", [
-        `Workspace: ${config.workspaceRoot}`,
+        `Workspace Root: ${config.workspaceRoot}`,
+        `Scope Path: ${scope.path}`,
+        `Scope Root: ${scope.root}`,
         `Profile: ${state.profileId}`,
         `Workflow: ${state.workflowId}`,
         `Included files: ${state.selectedFiles.size > 0 ? [...state.selectedFiles].join(", ") : "(none)"}`,
         `Saved command output: ${state.recentCommandOutput ? "yes" : "no"}`
       ].join("\n"));
       return;
+    }
     case "/profiles":
       printBlock("Profiles", config.profiles.map((profile) => {
         const marker = profile.id === state.profileId ? "*" : " ";
@@ -191,8 +220,32 @@ async function handleSlashCommand(rl, config, state, line) {
       printBlock("Workflow", `Switched to ${nextWorkflow}`);
       return;
     }
+    case "/scope": {
+      if (!rest) {
+        const scope = resolveScope(config.workspaceRoot, state.scopePath);
+        printBlock("Scope", [
+          `Workspace Root: ${config.workspaceRoot}`,
+          `Scope Path: ${scope.path}`,
+          `Scope Root: ${scope.root}`
+        ].join("\n"));
+        return;
+      }
+
+      const scope = resolveScope(config.workspaceRoot, rest);
+      state.scopePath = scope.path;
+      state.selectedFiles.clear();
+      state.recentCommandOutput = "";
+      state.messages = [];
+      syncScopeSkills(config, state);
+      printBlock("Scope", [
+        `Scope Path: ${scope.path}`,
+        `Scope Root: ${scope.root}`,
+        "Cleared included files, saved command output, and chat history for the new scope."
+      ].join("\n"));
+      return;
+    }
     case "/skills": {
-      const skills = listSkills(config);
+      const skills = listSkills(buildScopedConfig(config, state.scopePath));
       printBlock("Skills", skills.length > 0 ? skills.map((skill) => {
         const marker = state.selectedSkillIds.has(skill.id) ? "*" : " ";
         const suffix = skill.description ? ` - ${skill.description}` : "";
@@ -205,7 +258,7 @@ async function handleSlashCommand(rl, config, state, line) {
       if (!skillId) {
         throw new Error("Usage: /skillinfo <id>");
       }
-      const skill = loadSkillsByIds(config, [skillId])[0];
+      const skill = loadSkillsByIds(buildScopedConfig(config, state.scopePath), [skillId])[0];
       if (!skill) {
         throw new Error(`Unknown skill: ${skillId}`);
       }
@@ -223,7 +276,7 @@ async function handleSlashCommand(rl, config, state, line) {
       if (!skillId) {
         throw new Error("Usage: /skill <id>");
       }
-      const known = listSkills(config).find((skill) => skill.id === skillId);
+      const known = listSkills(buildScopedConfig(config, state.scopePath)).find((skill) => skill.id === skillId);
       if (!known) {
         throw new Error(`Unknown skill: ${skillId}`);
       }
@@ -241,35 +294,39 @@ async function handleSlashCommand(rl, config, state, line) {
       return;
     }
     case "/tree": {
+      const scope = resolveScope(config.workspaceRoot, state.scopePath);
       const target = args[0] || ".";
-      assertInsideWorkspace(config.workspaceRoot, target);
-      printBlock("Tree", buildTreeLines(config.workspaceRoot, target, 2).join("\n"));
+      assertInsideWorkspace(scope.root, target);
+      printBlock("Tree", buildTreeLines(scope.root, target, 2).join("\n"));
       return;
     }
     case "/ls": {
+      const scope = resolveScope(config.workspaceRoot, state.scopePath);
       const target = args[0] || ".";
-      const listing = listDirectory(config.workspaceRoot, target);
+      const listing = listDirectory(scope.root, target);
       printBlock(`Directory ${listing.path}`, listing.entries.map((entry) => {
         return `${entry.type === "directory" ? "[D]" : "[F]"} ${entry.path}`;
       }).join("\n"));
       return;
     }
     case "/open": {
+      const scope = resolveScope(config.workspaceRoot, state.scopePath);
       const filePath = args[0];
       if (!filePath) {
         throw new Error("Usage: /open <path>");
       }
-      const content = readFile(config.workspaceRoot, filePath);
+      const content = readFile(scope.root, filePath);
       printBlock(filePath, content);
       return;
     }
     case "/include": {
+      const scope = resolveScope(config.workspaceRoot, state.scopePath);
       const filePath = args[0];
       if (!filePath) {
         throw new Error("Usage: /include <path>");
       }
-      readFile(config.workspaceRoot, filePath);
-      state.selectedFiles.add(filePath.replace(/\\/g, "/"));
+      readFile(scope.root, filePath);
+      state.selectedFiles.add(normalizeRelativePath(filePath));
       printBlock("Included", [...state.selectedFiles].join("\n"));
       return;
     }
@@ -278,7 +335,7 @@ async function handleSlashCommand(rl, config, state, line) {
       if (!filePath) {
         throw new Error("Usage: /exclude <path>");
       }
-      state.selectedFiles.delete(filePath.replace(/\\/g, "/"));
+      state.selectedFiles.delete(normalizeRelativePath(filePath));
       printBlock("Included", state.selectedFiles.size > 0 ? [...state.selectedFiles].join("\n") : "(none)");
       return;
     }
@@ -286,21 +343,23 @@ async function handleSlashCommand(rl, config, state, line) {
       printBlock("Included", state.selectedFiles.size > 0 ? [...state.selectedFiles].join("\n") : "(none)");
       return;
     case "/write": {
+      const scope = resolveScope(config.workspaceRoot, state.scopePath);
       const filePath = args[0];
       if (!filePath) {
         throw new Error("Usage: /write <path>");
       }
       const content = await readMultiline(rl, `Writing ${filePath}`, "write> ");
-      writeFile(config.workspaceRoot, filePath, content);
+      writeFile(scope.root, filePath, content);
       printBlock("Saved", `${filePath} (${Buffer.byteLength(content, "utf8")} bytes)`);
       return;
     }
     case "/run": {
+      const scope = resolveScope(config.workspaceRoot, state.scopePath);
       if (!rest) {
         throw new Error("Usage: /run <command>");
       }
       const shellCommand = rest.replace(/^\/run\s+/, "");
-      const result = await runWorkspaceCommand(config.workspaceRoot, shellCommand);
+      const result = await runWorkspaceCommand(scope.root, shellCommand);
       state.recentCommandOutput = result.combined;
       printBlock(`Command exit ${result.code}`, result.combined || "(no output)");
       return;
@@ -318,8 +377,8 @@ async function handleSlashCommand(rl, config, state, line) {
 
 async function sendCliChat(config, state, userInput) {
   const selectedFilePaths = [...state.selectedFiles];
-  const contextBundle = buildContextBundle(config, selectedFilePaths, state.recentCommandOutput);
-  const skillBundle = buildSkillBundle(config, state.selectedSkillIds);
+  const contextBundle = buildContextBundle(config, state.scopePath, selectedFilePaths, state.recentCommandOutput);
+  const skillBundle = buildSkillBundle(config, state.scopePath, state.selectedSkillIds);
   const promptPrefix = workflowPrompt(state.workflowId);
   const finalMessages = [
     { role: "system", content: config.systemPrompt },
@@ -366,6 +425,7 @@ async function main() {
   const state = {
     profileId: config.activeProfileId,
     workflowId: "analyze",
+    scopePath: ".",
     selectedSkillIds: new Set(),
     selectedFiles: new Set(),
     recentCommandOutput: "",
@@ -379,7 +439,8 @@ async function main() {
   });
 
   printBlock("KingCode CLI", [
-    `Workspace: ${relativeLabel(resolvedWorkspace, resolvedWorkspace)} (${resolvedWorkspace})`,
+    `Workspace Root: ${relativeLabel(resolvedWorkspace, resolvedWorkspace)} (${resolvedWorkspace})`,
+    `Scope: . (${resolvedWorkspace})`,
     `Profile: ${state.profileId}`,
     `Workflow: ${state.workflowId}`,
     "Type /help for commands."

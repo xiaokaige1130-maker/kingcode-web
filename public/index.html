@@ -1,4 +1,4 @@
-﻿<!doctype html>
+<!doctype html>
 <html lang="en">
   <head>
     <meta charset="utf-8">
@@ -94,6 +94,18 @@
           </label>
 
           <label>
+            <span>Scope Path</span>
+            <input id="scope-path" type="text" placeholder=".">
+          </label>
+
+          <div class="button-row">
+            <button id="apply-scope" class="ghost">Apply Scope</button>
+            <button id="reset-scope" class="ghost">Reset Scope</button>
+          </div>
+
+          <div id="scope-summary" class="hint">Scope: .</div>
+
+          <label>
             <span>System Prompt</span>
             <textarea id="system-prompt" rows="5"></textarea>
           </label>
@@ -107,7 +119,7 @@
             <h2>Skills</h2>
             <button id="refresh-skills" class="ghost">Refresh</button>
           </div>
-          <div class="hint">Supports `./skills`, workspace `skills`, and `.claude/skills`.</div>
+          <div class="hint">Supports `./skills`, scoped `skills`, and scoped `.claude/skills`.</div>
           <div id="skills-list" class="skill-list"></div>
         </section>
       </aside>
@@ -129,9 +141,9 @@
         <section class="chat card">
           <div id="messages" class="messages"></div>
           <form id="chat-form" class="composer">
-            <textarea id="message-input" rows="5" placeholder="Ask the assistant about the current codebase, selected files, or command output."></textarea>
+            <textarea id="message-input" rows="5" placeholder="Ask the assistant about the current scope, selected files, or command output."></textarea>
             <div class="composer-bar">
-              <div class="hint">Selected files are injected into the prompt context automatically.</div>
+              <div class="hint">Selected files are injected from the active scope only.</div>
               <button type="submit">Send</button>
             </div>
           </form>
@@ -148,7 +160,7 @@
             </label>
           </div>
           <div id="editor-path" class="tree-path">No file selected</div>
-          <textarea id="file-editor" rows="24" placeholder="Open a file from the workspace tree."></textarea>
+          <textarea id="file-editor" rows="24" placeholder="Open a file from the current scope."></textarea>
           <div class="button-row">
             <button id="save-file">Save File</button>
           </div>

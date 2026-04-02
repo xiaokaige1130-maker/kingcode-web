@@ -56,24 +56,30 @@ npm run cli
 CLI commands:
 
 - `/help`
+- `/status`
 - `/profiles`
 - `/profile <id>`
 - `/workflow <id>`
+- `/scope [path]`
 - `/skills`
 - `/skillinfo <id>`
 - `/skill <id>`
 - `/unskill <id>`
 - `/tree [path]`
+- `/ls [path]`
 - `/open <path>`
+- `/exclude <path>`
+- `/files`
 - `/include <path>`
 - `/write <path>`
 - `/run <command>`
+- `/clearcmd`
 
 Plain text input sends a chat request using the active workflow plus any included files and recent command output.
 
 For `openai-compatible` providers such as `DeepSeek`, the CLI prints tokens incrementally instead of waiting for the full response.
 
-## Skills
+## Skills and Scope
 
 KingCode can discover skills from:
 
@@ -82,6 +88,13 @@ KingCode can discover skills from:
 - `<workspace>/.claude/skills/<name>/SKILL.md`
 
 Web mode lets you select skills from the sidebar. CLI mode supports `/skills`, `/skill <id>`, and `/unskill <id>`.
+
+Both Web and CLI also support a scoped working area inside the configured workspace root:
+
+- Web: set `Scope Path` in the workspace card
+- CLI: use `/scope <path>`
+
+File browsing, command execution, selected files, and skill discovery all follow the active scope.
 
 ## Provider model
 
@@ -125,7 +138,7 @@ choices.0.message.content
 
 This is intentionally an MVP:
 
-- no streaming responses yet
+- Web responses are still non-streaming
 - no multi-agent orchestration
 - no marketplace/plugin loader
 - no autonomous tool-calling loop

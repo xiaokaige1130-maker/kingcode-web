@@ -1,4 +1,4 @@
-﻿const http = require("http");
+const http = require("http");
 const path = require("path");
 const fs = require("fs");
 const { exec } = require("child_process");
@@ -13,6 +13,7 @@ const {
   collectFiles,
   listDirectory,
   readFile,
+  resolveScope,
   writeFile
 } = require("./lib/workspace");
 
@@ -122,13 +123,23 @@ function workflowPrompt(workflowId) {
   }
 }
 
-function buildContextBundle(config, selectedFilePaths, recentCommandOutput) {
-  const workspaceRoot = config.workspaceRoot;
-  const tree = buildTreeLines(workspaceRoot, ".", 2).join("\n");
-  const files = collectFiles(workspaceRoot, selectedFilePaths);
+function buildScopedConfig(config, scopePath) {
+  const scope = resolveScope(config.workspaceRoot, scopePath);
+  return {
+    ...config,
+    workspaceRoot: scope.root
+  };
+}
+
+function buildContextBundle(config, scopePath, selectedFilePaths, recentCommandOutput) {
+  const scope = resolveScope(config.workspaceRoot, scopePath);
+  const tree = buildTreeLines(scope.root, ".", 2).join("\n");
+  const files = collectFiles(scope.root, selectedFilePaths);
   const fileBlocks = files.map((file) => `FILE: ${file.path}\n${file.content}`).join("\n\n");
   const sections = [
-    `Workspace root: ${workspaceRoot}`,
+    `Workspace root: ${config.workspaceRoot}`,
+    `Scope path: ${scope.path}`,
+    `Scope root: ${scope.root}`,
     `Workspace tree:\n${tree}`
   ];
 
@@ -143,8 +154,8 @@ function buildContextBundle(config, selectedFilePaths, recentCommandOutput) {
   return sections.join("\n\n");
 }
 
-function buildSkillBundle(config, selectedSkillIds) {
-  const skills = loadSkillsByIds(config, selectedSkillIds);
+function buildSkillBundle(config, scopePath, selectedSkillIds) {
+  const skills = loadSkillsByIds(buildScopedConfig(config, scopePath), selectedSkillIds);
   if (skills.length === 0) {
     return "";
   }
@@ -156,6 +167,13 @@ function buildSkillBundle(config, selectedSkillIds) {
       skill.content
     ].join("\n");
   }).join("\n\n");
+}
+
+function readScopePath(requestUrl, body) {
+  if (body && typeof body.scopePath === "string") {
+    return body.scopePath;
+  }
+  return requestUrl.searchParams.get("scopePath") || ".";
 }
 
 async function handleApi(request, response, requestUrl) {
@@ -172,7 +190,12 @@ async function handleApi(request, response, requestUrl) {
 
     if (request.method === "GET" && requestUrl.pathname === "/api/skills") {
       const config = loadConfig();
-      sendJson(response, 200, { skills: listSkills(config) });
+      const scope = resolveScope(config.workspaceRoot, readScopePath(requestUrl));
+      sendJson(response, 200, {
+        scopePath: scope.path,
+        scopeRoot: scope.root,
+        skills: listSkills(buildScopedConfig(config, scope.path))
+      });
       return;
     }
 
@@ -184,14 +207,20 @@ async function handleApi(request, response, requestUrl) {
 
     if (request.method === "GET" && requestUrl.pathname === "/api/workspace/tree") {
       const config = loadConfig();
+      const scope = resolveScope(config.workspaceRoot, readScopePath(requestUrl));
       const relativePath = requestUrl.searchParams.get("path") || ".";
-      assertInsideWorkspace(config.workspaceRoot, relativePath);
-      sendJson(response, 200, listDirectory(config.workspaceRoot, relativePath));
+      assertInsideWorkspace(scope.root, relativePath);
+      sendJson(response, 200, {
+        ...listDirectory(scope.root, relativePath),
+        scopePath: scope.path,
+        scopeRoot: scope.root
+      });
       return;
     }
 
     if (request.method === "GET" && requestUrl.pathname === "/api/workspace/file") {
       const config = loadConfig();
+      const scope = resolveScope(config.workspaceRoot, readScopePath(requestUrl));
       const relativePath = requestUrl.searchParams.get("path");
 
       if (!relativePath) {
@@ -201,7 +230,9 @@ async function handleApi(request, response, requestUrl) {
 
       sendJson(response, 200, {
         path: relativePath,
-        content: readFile(config.workspaceRoot, relativePath)
+        scopePath: scope.path,
+        scopeRoot: scope.root,
+        content: readFile(scope.root, relativePath)
       });
       return;
     }
@@ -209,28 +240,35 @@ async function handleApi(request, response, requestUrl) {
     if (request.method === "POST" && requestUrl.pathname === "/api/workspace/file") {
       const config = loadConfig();
       const body = await parseBody(request);
-      writeFile(config.workspaceRoot, body.path, body.content || "");
-      sendJson(response, 200, { ok: true });
+      const scope = resolveScope(config.workspaceRoot, readScopePath(requestUrl, body));
+      writeFile(scope.root, body.path, body.content || "");
+      sendJson(response, 200, { ok: true, scopePath: scope.path, scopeRoot: scope.root });
       return;
     }
 
     if (request.method === "POST" && requestUrl.pathname === "/api/command") {
       const config = loadConfig();
       const body = await parseBody(request);
-      const result = await runWorkspaceCommand(config.workspaceRoot, body.command || "");
-      sendJson(response, 200, result);
+      const scope = resolveScope(config.workspaceRoot, readScopePath(requestUrl, body));
+      const result = await runWorkspaceCommand(scope.root, body.command || "");
+      sendJson(response, 200, {
+        ...result,
+        scopePath: scope.path,
+        scopeRoot: scope.root
+      });
       return;
     }
 
     if (request.method === "POST" && requestUrl.pathname === "/api/chat") {
       const config = loadConfig();
       const body = await parseBody(request);
+      const scope = resolveScope(config.workspaceRoot, readScopePath(requestUrl, body));
       const selectedFilePaths = Array.isArray(body.selectedFilePaths) ? body.selectedFilePaths : [];
       const selectedSkillIds = Array.isArray(body.selectedSkillIds) ? body.selectedSkillIds : [];
       const recentCommandOutput = typeof body.recentCommandOutput === "string" ? body.recentCommandOutput : "";
       const userMessages = Array.isArray(body.messages) ? body.messages : [];
-      const contextBundle = buildContextBundle(config, selectedFilePaths, recentCommandOutput);
-      const skillBundle = buildSkillBundle(config, selectedSkillIds);
+      const contextBundle = buildContextBundle(config, scope.path, selectedFilePaths, recentCommandOutput);
+      const skillBundle = buildSkillBundle(config, scope.path, selectedSkillIds);
       const promptPrefix = workflowPrompt(body.workflowId);
       const finalMessages = [
         { role: "system", content: config.systemPrompt },
@@ -250,7 +288,11 @@ async function handleApi(request, response, requestUrl) {
       ];
 
       const content = await sendChat(config, body.profileId || config.activeProfileId, finalMessages);
-      sendJson(response, 200, { content });
+      sendJson(response, 200, {
+        content,
+        scopePath: scope.path,
+        scopeRoot: scope.root
+      });
       return;
     }
 
