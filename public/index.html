@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="en">
+<html lang="zh-CN">
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -7,346 +7,391 @@
     <link rel="stylesheet" href="/styles.css">
   </head>
   <body>
-    <div class="shell">
-      <aside class="panel rail">
-        <div class="brand">
-          <p class="eyebrow">Agent Console</p>
-          <h1>KingCode</h1>
-          <p class="lede">A provider-agnostic coding assistant with local files, prompts, and a browser UI.</p>
+    <div class="app-shell">
+      <aside class="sidebar left-sidebar">
+        <div class="sidebar-header brand-panel">
+          <div>
+            <p class="eyebrow">LOCAL OPS CONSOLE</p>
+            <h1>KingCode</h1>
+          </div>
+          <p class="lede">本地开发、项目运维、Git 更新和部署动作都收在一个工作台里。</p>
         </div>
 
-        <section class="card">
-          <div class="section-head">
-            <h2>Profiles</h2>
-            <button id="new-profile" class="ghost">New</button>
-          </div>
+        <div class="sidebar-scroll">
+          <section class="panel-card">
+            <div class="section-head">
+              <h2>模型配置</h2>
+              <button id="new-profile" class="ghost">新建</button>
+            </div>
 
-          <label>
-            <span>Active Profile</span>
-            <select id="profile-select"></select>
-          </label>
+            <label>
+              <span>当前配置</span>
+              <select id="profile-select"></select>
+            </label>
 
-          <label>
-            <span>Name</span>
-            <input id="profile-name" type="text">
-          </label>
+            <label>
+              <span>名称</span>
+              <input id="profile-name" type="text">
+            </label>
 
-          <label>
-            <span>Type</span>
-            <select id="profile-type">
-              <option value="openai-compatible">OpenAI Compatible</option>
-              <option value="anthropic">Anthropic</option>
-              <option value="gemini">Gemini</option>
-              <option value="generic-json">Generic JSON API</option>
-            </select>
-          </label>
+            <div class="two-col">
+              <label>
+                <span>类型</span>
+                <select id="profile-type">
+                  <option value="openai-compatible">OpenAI Compatible</option>
+                  <option value="anthropic">Anthropic</option>
+                  <option value="gemini">Gemini</option>
+                  <option value="generic-json">Generic JSON API</option>
+                </select>
+              </label>
+              <label>
+                <span>模型</span>
+                <input id="profile-model" type="text">
+              </label>
+            </div>
 
-          <label>
-            <span>Base URL</span>
-            <input id="profile-base-url" type="text">
-          </label>
+            <label>
+              <span>Base URL</span>
+              <input id="profile-base-url" type="text">
+            </label>
 
-          <label>
-            <span>Path</span>
-            <input id="profile-path" type="text">
-          </label>
+            <label>
+              <span>Path</span>
+              <input id="profile-path" type="text">
+            </label>
 
-          <label>
-            <span>Model</span>
-            <input id="profile-model" type="text">
-          </label>
+            <label>
+              <span>API Key</span>
+              <input id="profile-api-key" type="password">
+            </label>
 
-          <label>
-            <span>API Key</span>
-            <input id="profile-api-key" type="password">
-          </label>
+            <details class="fold">
+              <summary>高级模板</summary>
 
-          <label>
-            <span>Headers Template</span>
-            <textarea id="profile-headers" rows="5"></textarea>
-          </label>
+              <label>
+                <span>Headers Template</span>
+                <textarea id="profile-headers" rows="5"></textarea>
+              </label>
 
-          <label>
-            <span>Body Template</span>
-            <textarea id="profile-body" rows="7"></textarea>
-          </label>
+              <label>
+                <span>Body Template</span>
+                <textarea id="profile-body" rows="7"></textarea>
+              </label>
 
-          <label>
-            <span>Response Path</span>
-            <input id="profile-response-path" type="text" placeholder="choices.0.message.content">
-          </label>
+              <label>
+                <span>Response Path</span>
+                <input id="profile-response-path" type="text" placeholder="choices.0.message.content">
+              </label>
+            </details>
 
-          <div class="button-row">
-            <button id="save-config">Save Config</button>
-            <button id="delete-profile" class="ghost">Delete</button>
-          </div>
-        </section>
+            <div class="button-row">
+              <button id="save-config">保存配置</button>
+              <button id="delete-profile" class="ghost">删除</button>
+            </div>
+          </section>
 
-        <section class="card">
-          <div class="section-head">
-            <h2>Workspace</h2>
-            <button id="refresh-tree" class="ghost">Refresh</button>
-          </div>
+          <section class="panel-card">
+            <div class="section-head">
+              <h2>工作区</h2>
+              <button id="refresh-tree" class="ghost">刷新</button>
+            </div>
 
-          <label>
-            <span>Root Path</span>
-            <input id="workspace-root" type="text">
-          </label>
+            <label>
+              <span>根目录</span>
+              <input id="workspace-root" type="text">
+            </label>
 
-          <label>
-            <span>Scope Path</span>
-            <input id="scope-path" type="text" placeholder=".">
-          </label>
+            <label>
+              <span>Scope Path</span>
+              <input id="scope-path" type="text" placeholder=".">
+            </label>
 
-          <div class="button-row">
-            <button id="apply-scope" class="ghost">Apply Scope</button>
-            <button id="reset-scope" class="ghost">Reset Scope</button>
-          </div>
+            <div class="button-row">
+              <button id="apply-scope" class="ghost">应用范围</button>
+              <button id="reset-scope" class="ghost">重置</button>
+            </div>
 
-          <div id="scope-summary" class="hint">Scope: .</div>
+            <div id="scope-summary" class="status-pill">Scope: .</div>
 
-          <label>
-            <span>System Prompt</span>
-            <textarea id="system-prompt" rows="5"></textarea>
-          </label>
+            <label>
+              <span>系统提示词</span>
+              <textarea id="system-prompt" rows="5"></textarea>
+            </label>
 
-          <div class="tree-path" id="tree-path">.</div>
-          <div id="file-tree" class="tree"></div>
-        </section>
+            <div class="subhead">
+              <span>目录树</span>
+              <span id="tree-path" class="mono">.</span>
+            </div>
+            <div id="file-tree" class="tree"></div>
+          </section>
 
-        <section class="card">
-          <div class="section-head">
-            <h2>Skills</h2>
-            <button id="refresh-skills" class="ghost">Refresh</button>
-          </div>
-          <div class="hint">Supports `./skills`, scoped `skills`, and scoped `.claude/skills`.</div>
-          <div id="skills-list" class="skill-list"></div>
-        </section>
+          <section class="panel-card">
+            <div class="section-head">
+              <h2>Skills</h2>
+              <button id="refresh-skills" class="ghost">刷新</button>
+            </div>
+            <div class="hint">支持当前项目 `skills`、scope 下的 `skills`，以及 `.claude/skills`。</div>
+            <div id="skills-list" class="skill-list"></div>
+          </section>
+        </div>
       </aside>
 
-      <main class="panel stage">
-        <section class="hero">
-          <div>
-            <p class="eyebrow">Workflow Presets</p>
-            <h2>Commands, agents, skills, and tools in one surface.</h2>
+      <main class="center-stage">
+        <header class="topbar panel-card">
+          <div class="topbar-main">
+            <p class="eyebrow">CHAT WORKSPACE</p>
+            <h2>和当前代码、文件、命令输出直接对话</h2>
           </div>
+          <div class="topbar-meta">
+            <div class="meta-chip">
+              <span>Workflow</span>
+              <strong id="workflow-label">Analyze</strong>
+            </div>
+            <div class="meta-chip">
+              <span>Profile</span>
+              <strong id="active-profile-label">-</strong>
+            </div>
+          </div>
+        </header>
+
+        <section class="workflow-strip panel-card">
           <div class="chip-row">
             <button class="chip active" data-workflow="analyze">Analyze</button>
             <button class="chip" data-workflow="plan">Plan</button>
             <button class="chip" data-workflow="review">Review</button>
             <button class="chip" data-workflow="implement">Implement</button>
           </div>
+          <div class="hint">聊天会自动带上当前 scope、已选文件、已启用 skills 和最近命令输出。</div>
         </section>
 
-        <section class="chat card">
+        <section class="chat-stage panel-card">
           <div id="messages" class="messages"></div>
           <form id="chat-form" class="composer">
-            <textarea id="message-input" rows="5" placeholder="Ask the assistant about the current scope, selected files, or command output."></textarea>
+            <div class="composer-top">
+              <span class="hint">对话区固定在底部，不需要再滚到页面最下方。</span>
+              <span class="hint">当前只注入活动范围里的文件。</span>
+            </div>
+            <textarea id="message-input" rows="4" placeholder="直接提问，或者让 KingCode 分析当前 scope、修改文件、执行部署动作。"></textarea>
             <div class="composer-bar">
-              <div class="hint">Selected files are injected from the active scope only.</div>
-              <button type="submit">Send</button>
+              <div class="hint">Shift + Enter 换行，直接发送请点右侧按钮。</div>
+              <button type="submit">发送</button>
             </div>
           </form>
         </section>
       </main>
 
-      <aside class="panel inspector">
-        <section class="card">
-          <div class="section-head">
-            <h2>File Editor</h2>
-            <label class="context-toggle">
-              <input id="include-file" type="checkbox">
-              <span>Include in AI context</span>
-            </label>
+      <aside class="sidebar right-sidebar">
+        <div class="sidebar-header tool-header">
+          <div>
+            <p class="eyebrow">TOOLS</p>
+            <h2>右侧工具台</h2>
           </div>
-          <div id="editor-path" class="tree-path">No file selected</div>
-          <textarea id="file-editor" rows="24" placeholder="Open a file from the current scope."></textarea>
-          <div class="button-row">
-            <button id="save-file">Save File</button>
+          <div class="tab-row">
+            <button class="tool-tab active" data-panel="editor">编辑</button>
+            <button class="tool-tab" data-panel="command">命令</button>
+            <button class="tool-tab" data-panel="git">Git</button>
+            <button class="tool-tab" data-panel="deploy">部署</button>
           </div>
-        </section>
+        </div>
 
-        <section class="card">
-          <div class="section-head">
-            <h2>Command Deck</h2>
-          </div>
-          <textarea id="command-input" rows="4" placeholder="git status"></textarea>
-          <div class="button-row">
-            <button id="run-command">Run Command</button>
-          </div>
-          <pre id="command-output" class="terminal"></pre>
-        </section>
+        <div class="sidebar-scroll">
+          <section class="panel-card tool-panel active" data-panel="editor">
+            <div class="section-head">
+              <h2>文件编辑器</h2>
+              <label class="context-toggle">
+                <input id="include-file" type="checkbox">
+                <span>加入 AI 上下文</span>
+              </label>
+            </div>
+            <div id="editor-path" class="status-pill">未选择文件</div>
+            <textarea id="file-editor" rows="24" placeholder="从左侧目录树打开一个文件。"></textarea>
+            <div class="button-row">
+              <button id="save-file">保存文件</button>
+            </div>
+          </section>
 
-        <section class="card">
-          <div class="section-head">
-            <h2>Git Panel</h2>
-            <button id="refresh-git" class="ghost">Refresh</button>
-          </div>
-          <div id="git-summary" class="hint">Git status has not been loaded yet.</div>
-          <textarea id="git-status-output" rows="10" class="terminal light-terminal" placeholder="Git branch, remotes, and status will appear here." readonly></textarea>
-          <label>
-            <span>Commit Message</span>
-            <input id="git-commit-message" type="text" placeholder="Describe this change">
-          </label>
-          <div class="button-row">
-            <button id="git-commit">Commit All</button>
-            <button id="git-push" class="ghost">Push</button>
-          </div>
-        </section>
+          <section class="panel-card tool-panel" data-panel="command">
+            <div class="section-head">
+              <h2>命令台</h2>
+            </div>
+            <textarea id="command-input" rows="4" placeholder="例如：git status"></textarea>
+            <div class="button-row">
+              <button id="run-command">执行命令</button>
+            </div>
+            <pre id="command-output" class="terminal"></pre>
+          </section>
 
-        <section class="card">
-          <div class="section-head">
-            <h2>Deploy Panel</h2>
-            <button id="deploy-status" class="ghost">Status</button>
-          </div>
-
-          <div class="inline-grid">
+          <section class="panel-card tool-panel" data-panel="git">
+            <div class="section-head">
+              <h2>Git 面板</h2>
+              <button id="refresh-git" class="ghost">刷新</button>
+            </div>
+            <div id="git-summary" class="status-pill">Git 状态尚未加载</div>
+            <textarea id="git-status-output" rows="10" class="terminal light-terminal" placeholder="分支、远程和工作区状态会显示在这里。" readonly></textarea>
             <label>
-              <span>Preset</span>
-              <select id="deploy-preset">
-                <option value="node-web">Node Web</option>
-                <option value="python-bot">Python Bot</option>
-                <option value="docker-compose">Docker Compose</option>
-              </select>
+              <span>提交说明</span>
+              <input id="git-commit-message" type="text" placeholder="描述这次变更">
             </label>
+            <div class="button-row">
+              <button id="git-commit">提交全部</button>
+              <button id="git-push" class="ghost">推送</button>
+            </div>
+          </section>
+
+          <section class="panel-card tool-panel" data-panel="deploy">
+            <div class="section-head">
+              <h2>部署面板</h2>
+              <button id="deploy-status" class="ghost">状态</button>
+            </div>
+
+            <div class="two-col">
+              <label>
+                <span>预设</span>
+                <select id="deploy-preset">
+                  <option value="node-web">Node Web</option>
+                  <option value="python-bot">Python Bot</option>
+                  <option value="docker-compose">Docker Compose</option>
+                </select>
+              </label>
+              <label>
+                <span>&nbsp;</span>
+                <button id="deploy-apply-preset" class="ghost" type="button">套用预设</button>
+              </label>
+            </div>
+
             <label>
-              <span>&nbsp;</span>
-              <button id="deploy-apply-preset" class="ghost" type="button">Apply Preset</button>
+              <span>仓库地址</span>
+              <input id="deploy-repo-url" type="text" placeholder="https://github.com/owner/repo.git">
             </label>
-          </div>
 
-          <label>
-            <span>Repo URL</span>
-            <input id="deploy-repo-url" type="text" placeholder="https://github.com/owner/repo.git">
-          </label>
+            <div class="two-col">
+              <label>
+                <span>克隆路径</span>
+                <input id="deploy-target-path" type="text" placeholder="my-app">
+              </label>
+              <label>
+                <span>分支</span>
+                <input id="deploy-branch" type="text" placeholder="main">
+              </label>
+            </div>
 
-          <div class="inline-grid">
+            <div class="button-row">
+              <button id="deploy-clone">克隆仓库</button>
+            </div>
+
             <label>
-              <span>Clone Path</span>
-              <input id="deploy-target-path" type="text" placeholder="my-app">
+              <span>项目路径</span>
+              <input id="deploy-project-path" type="text" placeholder="my-app">
             </label>
+
             <label>
-              <span>Branch</span>
-              <input id="deploy-branch" type="text" placeholder="main">
+              <span>安装命令</span>
+              <input id="deploy-install-command" type="text" value="npm install">
             </label>
-          </div>
 
-          <div class="button-row">
-            <button id="deploy-clone">Clone Repo</button>
-          </div>
-
-          <label>
-            <span>Project Path</span>
-            <input id="deploy-project-path" type="text" placeholder="my-app">
-          </label>
-
-          <label>
-            <span>Install Command</span>
-            <input id="deploy-install-command" type="text" value="npm install">
-          </label>
-
-          <label>
-            <span>Build Command</span>
-            <input id="deploy-build-command" type="text" value="npm run build">
-          </label>
-
-          <div class="inline-grid">
             <label>
-              <span>Service Name</span>
-              <input id="deploy-service-name" type="text" placeholder="my-app">
+              <span>构建命令</span>
+              <input id="deploy-build-command" type="text" value="npm run build">
             </label>
+
+            <div class="two-col">
+              <label>
+                <span>服务名</span>
+                <input id="deploy-service-name" type="text" placeholder="my-app">
+              </label>
+              <label>
+                <span>服务模式</span>
+                <select id="deploy-service-mode">
+                  <option value="npm-start">npm start</option>
+                  <option value="npm-script">npm run &lt;script&gt;</option>
+                  <option value="pnpm-start">pnpm start</option>
+                  <option value="pnpm-script">pnpm run &lt;script&gt;</option>
+                  <option value="node-script">node &lt;file&gt;</option>
+                  <option value="python-script">python3 &lt;file&gt;</option>
+                </select>
+              </label>
+            </div>
+
             <label>
-              <span>Service Mode</span>
-              <select id="deploy-service-mode">
-                <option value="npm-start">npm start</option>
-                <option value="npm-script">npm run &lt;script&gt;</option>
-                <option value="pnpm-start">pnpm start</option>
-                <option value="pnpm-script">pnpm run &lt;script&gt;</option>
-                <option value="node-script">node &lt;file&gt;</option>
-                <option value="python-script">python3 &lt;file&gt;</option>
-              </select>
+              <span>服务目标</span>
+              <input id="deploy-service-target" type="text" placeholder="start / server.js">
             </label>
-          </div>
 
-          <label>
-            <span>Service Target</span>
-            <input id="deploy-service-target" type="text" placeholder="start / server.js">
-          </label>
+            <div class="button-row">
+              <button id="deploy-install">安装依赖</button>
+              <button id="deploy-service" class="ghost">创建服务</button>
+            </div>
 
-          <div class="button-row">
-            <button id="deploy-install">Install</button>
-            <button id="deploy-service" class="ghost">Create Service</button>
-          </div>
+            <div class="button-row">
+              <button id="deploy-systemd" class="ghost">生成 systemd</button>
+              <button id="deploy-update">更新项目</button>
+            </div>
 
-          <div class="button-row">
-            <button id="deploy-systemd" class="ghost">Create systemd</button>
-            <button id="deploy-update">Update Project</button>
-          </div>
+            <div class="two-col">
+              <label>
+                <span>日志来源</span>
+                <select id="deploy-log-source">
+                  <option value="pm2">PM2</option>
+                  <option value="systemd">systemd</option>
+                  <option value="docker-compose">Docker Compose</option>
+                </select>
+              </label>
+              <label>
+                <span>日志行数</span>
+                <input id="deploy-log-lines" type="text" value="80">
+              </label>
+            </div>
 
-          <div class="inline-grid">
+            <div class="button-row">
+              <button id="deploy-logs" class="ghost">加载日志</button>
+            </div>
+
+            <div class="two-col">
+              <label>
+                <span>健康检查 URL</span>
+                <input id="deploy-health-url" type="text" placeholder="http://127.0.0.1:3001/api/health">
+              </label>
+              <label>
+                <span>&nbsp;</span>
+                <button id="deploy-health" class="ghost" type="button">健康检查</button>
+              </label>
+            </div>
+
+            <div class="button-row">
+              <button id="deploy-history" class="ghost">部署历史</button>
+              <button id="deploy-commits" class="ghost">最近提交</button>
+            </div>
+
             <label>
-              <span>Log Source</span>
-              <select id="deploy-log-source">
-                <option value="pm2">PM2</option>
-                <option value="systemd">systemd</option>
-                <option value="docker-compose">Docker Compose</option>
-              </select>
+              <span>回滚 Commit</span>
+              <input id="deploy-rollback-commit" type="text" placeholder="例如：a1b2c3d">
             </label>
-            <label>
-              <span>Log Lines</span>
-              <input id="deploy-log-lines" type="text" value="80">
-            </label>
-          </div>
 
-          <div class="button-row">
-            <button id="deploy-logs" class="ghost">Load Logs</button>
-          </div>
+            <div class="button-row">
+              <button id="deploy-rollback" class="ghost">执行回滚</button>
+            </div>
 
-          <div class="inline-grid">
-            <label>
-              <span>Health URL</span>
-              <input id="deploy-health-url" type="text" placeholder="http://127.0.0.1:3001/api/health">
-            </label>
-            <label>
-              <span>&nbsp;</span>
-              <button id="deploy-health" class="ghost" type="button">Health Check</button>
-            </label>
-          </div>
+            <div class="two-col">
+              <label>
+                <span>Compose 动作</span>
+                <select id="deploy-compose-action">
+                  <option value="up">up -d</option>
+                  <option value="down">down</option>
+                  <option value="pull">pull</option>
+                  <option value="restart">restart</option>
+                  <option value="logs">logs</option>
+                </select>
+              </label>
+              <label>
+                <span>&nbsp;</span>
+                <button id="deploy-compose" class="ghost" type="button">运行 Compose</button>
+              </label>
+            </div>
 
-          <div class="button-row">
-            <button id="deploy-history" class="ghost">History</button>
-            <button id="deploy-commits" class="ghost">Recent Commits</button>
-          </div>
-
-          <label>
-            <span>Rollback Commit</span>
-            <input id="deploy-rollback-commit" type="text" placeholder="例如：a1b2c3d">
-          </label>
-
-          <div class="button-row">
-            <button id="deploy-rollback" class="ghost">Rollback</button>
-          </div>
-
-          <div class="inline-grid">
-            <label>
-              <span>Compose Action</span>
-              <select id="deploy-compose-action">
-                <option value="up">up -d</option>
-                <option value="down">down</option>
-                <option value="pull">pull</option>
-                <option value="restart">restart</option>
-                <option value="logs">logs</option>
-              </select>
-            </label>
-            <label>
-              <span>&nbsp;</span>
-              <button id="deploy-compose" class="ghost" type="button">Run Compose</button>
-            </label>
-          </div>
-
-          <div id="deploy-summary" class="hint">Deploy actions run inside the active workspace scope.</div>
-          <pre id="deploy-output" class="terminal light-terminal"></pre>
-        </section>
+            <div id="deploy-summary" class="status-pill">部署动作默认运行在当前 scope 内。</div>
+            <pre id="deploy-output" class="terminal light-terminal"></pre>
+          </section>
+        </div>
       </aside>
     </div>
 

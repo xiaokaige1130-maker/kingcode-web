@@ -25,6 +25,8 @@ const els = {
   workspaceRoot: document.querySelector("#workspace-root"),
   scopePath: document.querySelector("#scope-path"),
   scopeSummary: document.querySelector("#scope-summary"),
+  workflowLabel: document.querySelector("#workflow-label"),
+  activeProfileLabel: document.querySelector("#active-profile-label"),
   systemPrompt: document.querySelector("#system-prompt"),
   treePath: document.querySelector("#tree-path"),
   fileTree: document.querySelector("#file-tree"),
@@ -82,7 +84,9 @@ const els = {
   deployCommits: document.querySelector("#deploy-commits"),
   deployRollback: document.querySelector("#deploy-rollback"),
   deployCompose: document.querySelector("#deploy-compose"),
-  deployUpdate: document.querySelector("#deploy-update")
+  deployUpdate: document.querySelector("#deploy-update"),
+  toolTabs: [...document.querySelectorAll(".tool-tab")],
+  toolPanels: [...document.querySelectorAll(".tool-panel")]
 };
 
 async function request(url, options = {}) {
@@ -125,6 +129,12 @@ function renderGitStatus(data) {
     "Status:",
     data.statusText || "Working tree clean."
   ].join("\n");
+}
+
+function renderHeaderMeta() {
+  const profile = activeProfile();
+  els.activeProfileLabel.textContent = profile ? profile.name || profile.id : "-";
+  els.workflowLabel.textContent = state.workflowId;
 }
 
 function renderDeployResult(data) {
@@ -205,6 +215,7 @@ function renderProfileForm() {
   els.profileHeaders.value = profile.headersTemplate || "{}";
   els.profileBody.value = profile.bodyTemplate || "";
   els.profileResponsePath.value = profile.responsePath || "";
+  renderHeaderMeta();
 }
 
 function syncActiveProfileFromForm() {
@@ -230,12 +241,26 @@ function renderMessages() {
   state.messages.forEach((message) => {
     const node = els.messageTemplate.content.firstElementChild.cloneNode(true);
     node.classList.add(message.role);
-    node.querySelector(".message-role").textContent = message.role;
+    const roleMap = {
+      user: "YOU",
+      assistant: "KINGCODE",
+      system: "SYSTEM"
+    };
+    node.querySelector(".message-role").textContent = roleMap[message.role] || message.role;
     node.querySelector(".message-body").textContent = message.content;
     els.messages.append(node);
   });
 
   els.messages.scrollTop = els.messages.scrollHeight;
+}
+
+function activateToolPanel(panelId) {
+  els.toolTabs.forEach((button) => {
+    button.classList.toggle("active", button.dataset.panel === panelId);
+  });
+  els.toolPanels.forEach((panel) => {
+    panel.classList.toggle("active", panel.dataset.panel === panelId);
+  });
 }
 
 function addMessage(role, content) {
@@ -433,6 +458,7 @@ function newProfile() {
   state.config.activeProfileId = id;
   renderProfileOptions();
   renderProfileForm();
+  renderHeaderMeta();
 }
 
 function deleteProfile() {
@@ -445,6 +471,7 @@ function deleteProfile() {
   state.config.activeProfileId = state.config.profiles[0].id;
   renderProfileOptions();
   renderProfileForm();
+  renderHeaderMeta();
 }
 
 async function saveCurrentFile() {
@@ -786,6 +813,7 @@ function bindEvents() {
     syncActiveProfileFromForm();
     state.config.activeProfileId = els.profileSelect.value;
     renderProfileForm();
+    renderHeaderMeta();
   });
 
   els.saveConfig.addEventListener("click", saveConfig);
@@ -847,7 +875,12 @@ function bindEvents() {
       document.querySelectorAll(".chip").forEach((entry) => entry.classList.remove("active"));
       chip.classList.add("active");
       state.workflowId = chip.dataset.workflow;
+      renderHeaderMeta();
     });
+  });
+
+  els.toolTabs.forEach((button) => {
+    button.addEventListener("click", () => activateToolPanel(button.dataset.panel));
   });
 }
 
@@ -859,7 +892,9 @@ async function init() {
   els.systemPrompt.value = state.config.systemPrompt;
   renderProfileOptions();
   renderProfileForm();
+  renderHeaderMeta();
   bindEvents();
+  activateToolPanel("editor");
   applyDeployPreset();
   await loadTree(".");
   await loadSkills();
