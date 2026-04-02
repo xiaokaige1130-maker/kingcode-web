@@ -141,11 +141,20 @@ label span,
 .section-head,
 .composer-bar,
 .button-row,
-.tree-row {
+.tree-row,
+.inline-grid {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 0.7rem;
+}
+
+.inline-grid {
+  align-items: stretch;
+}
+
+.inline-grid > label {
+  flex: 1;
 }
 
 .button-row button {

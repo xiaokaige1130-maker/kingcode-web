@@ -112,6 +112,19 @@ KingCode now includes minimal Git helpers on top of the existing command runner.
 
 These helpers still rely on local Git configuration and credentials. They do not create GitHub repositories or manage authentication for you.
 
+## Deploy helpers
+
+KingCode also includes a first-pass deployment panel for local or current-server maintenance.
+
+- Web `Deploy Panel` supports:
+  - cloning a Git repository into the active workspace scope
+  - running an install command such as `npm install` or `pip install -r requirements.txt`
+  - creating a PM2 service for common Node.js start modes
+  - updating an existing project by running `git pull`, install, build, and PM2 restart
+  - reading basic project and PM2 status
+
+The deployment panel is designed for the machine KingCode is running on. It does not add SSH or remote host management.
+
 ## Provider model
 
 Profiles are stored in `data/providers.json`. The `generic-json` adapter is the escape hatch for providers that do not match OpenAI, Anthropic, or Gemini directly.

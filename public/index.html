@@ -193,6 +193,82 @@
             <button id="git-push" class="ghost">Push</button>
           </div>
         </section>
+
+        <section class="card">
+          <div class="section-head">
+            <h2>Deploy Panel</h2>
+            <button id="deploy-status" class="ghost">Status</button>
+          </div>
+
+          <label>
+            <span>Repo URL</span>
+            <input id="deploy-repo-url" type="text" placeholder="https://github.com/owner/repo.git">
+          </label>
+
+          <div class="inline-grid">
+            <label>
+              <span>Clone Path</span>
+              <input id="deploy-target-path" type="text" placeholder="my-app">
+            </label>
+            <label>
+              <span>Branch</span>
+              <input id="deploy-branch" type="text" placeholder="main">
+            </label>
+          </div>
+
+          <div class="button-row">
+            <button id="deploy-clone">Clone Repo</button>
+          </div>
+
+          <label>
+            <span>Project Path</span>
+            <input id="deploy-project-path" type="text" placeholder="my-app">
+          </label>
+
+          <label>
+            <span>Install Command</span>
+            <input id="deploy-install-command" type="text" value="npm install">
+          </label>
+
+          <label>
+            <span>Build Command</span>
+            <input id="deploy-build-command" type="text" value="npm run build">
+          </label>
+
+          <div class="inline-grid">
+            <label>
+              <span>Service Name</span>
+              <input id="deploy-service-name" type="text" placeholder="my-app">
+            </label>
+            <label>
+              <span>Service Mode</span>
+              <select id="deploy-service-mode">
+                <option value="npm-start">npm start</option>
+                <option value="npm-script">npm run &lt;script&gt;</option>
+                <option value="pnpm-start">pnpm start</option>
+                <option value="pnpm-script">pnpm run &lt;script&gt;</option>
+                <option value="node-script">node &lt;file&gt;</option>
+              </select>
+            </label>
+          </div>
+
+          <label>
+            <span>Service Target</span>
+            <input id="deploy-service-target" type="text" placeholder="start / server.js">
+          </label>
+
+          <div class="button-row">
+            <button id="deploy-install">Install</button>
+            <button id="deploy-service" class="ghost">Create Service</button>
+          </div>
+
+          <div class="button-row">
+            <button id="deploy-update">Update Project</button>
+          </div>
+
+          <div id="deploy-summary" class="hint">Deploy actions run inside the active workspace scope.</div>
+          <pre id="deploy-output" class="terminal light-terminal"></pre>
+        </section>
       </aside>
     </div>
 

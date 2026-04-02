@@ -40,6 +40,17 @@ const els = {
   gitSummary: document.querySelector("#git-summary"),
   gitStatusOutput: document.querySelector("#git-status-output"),
   gitCommitMessage: document.querySelector("#git-commit-message"),
+  deployRepoUrl: document.querySelector("#deploy-repo-url"),
+  deployTargetPath: document.querySelector("#deploy-target-path"),
+  deployBranch: document.querySelector("#deploy-branch"),
+  deployProjectPath: document.querySelector("#deploy-project-path"),
+  deployInstallCommand: document.querySelector("#deploy-install-command"),
+  deployBuildCommand: document.querySelector("#deploy-build-command"),
+  deployServiceName: document.querySelector("#deploy-service-name"),
+  deployServiceMode: document.querySelector("#deploy-service-mode"),
+  deployServiceTarget: document.querySelector("#deploy-service-target"),
+  deploySummary: document.querySelector("#deploy-summary"),
+  deployOutput: document.querySelector("#deploy-output"),
   messageTemplate: document.querySelector("#message-template"),
   saveConfig: document.querySelector("#save-config"),
   deleteProfile: document.querySelector("#delete-profile"),
@@ -52,7 +63,12 @@ const els = {
   runCommand: document.querySelector("#run-command"),
   refreshGit: document.querySelector("#refresh-git"),
   gitCommit: document.querySelector("#git-commit"),
-  gitPush: document.querySelector("#git-push")
+  gitPush: document.querySelector("#git-push"),
+  deployStatus: document.querySelector("#deploy-status"),
+  deployClone: document.querySelector("#deploy-clone"),
+  deployInstall: document.querySelector("#deploy-install"),
+  deployService: document.querySelector("#deploy-service"),
+  deployUpdate: document.querySelector("#deploy-update")
 };
 
 async function request(url, options = {}) {
@@ -95,6 +111,15 @@ function renderGitStatus(data) {
     "Status:",
     data.statusText || "Working tree clean."
   ].join("\n");
+}
+
+function renderDeployResult(data) {
+  const location = data.projectPath || ".";
+  const root = data.projectRoot || "";
+  els.deploySummary.textContent = root
+    ? `Deploy target: ${location} (${root})`
+    : `Deploy target: ${location}`;
+  els.deployOutput.textContent = data.output || "(no output)";
 }
 
 function renderProfileOptions() {
@@ -225,6 +250,8 @@ function resetScopeSessionState() {
   els.commandOutput.textContent = "";
   els.gitSummary.textContent = "Git status has not been loaded yet.";
   els.gitStatusOutput.textContent = "";
+  els.deploySummary.textContent = "Deploy actions run inside the active workspace scope.";
+  els.deployOutput.textContent = "";
   syncIncludeCheckbox();
   renderMessages();
 }
@@ -486,6 +513,56 @@ async function pushGitChanges() {
   }
 }
 
+function deployPayload() {
+  return {
+    scopePath: state.scopePath,
+    repoUrl: els.deployRepoUrl.value.trim(),
+    targetPath: els.deployTargetPath.value.trim(),
+    branch: els.deployBranch.value.trim(),
+    projectPath: els.deployProjectPath.value.trim() || ".",
+    installCommand: els.deployInstallCommand.value.trim(),
+    buildCommand: els.deployBuildCommand.value.trim(),
+    serviceName: els.deployServiceName.value.trim(),
+    serviceMode: els.deployServiceMode.value,
+    serviceTarget: els.deployServiceTarget.value.trim()
+  };
+}
+
+async function runDeployAction(url, payload, successMessage) {
+  try {
+    const data = await request(url, {
+      method: "POST",
+      body: JSON.stringify(payload)
+    });
+    if (data.projectPath) {
+      els.deployProjectPath.value = data.projectPath;
+    }
+    renderScopeSummary(data.scopeRoot || "");
+    renderDeployResult(data);
+    addMessage("system", successMessage);
+  } catch (error) {
+    addMessage("system", error.message);
+    els.deployOutput.textContent = error.message;
+  }
+}
+
+async function loadDeployStatus() {
+  try {
+    const query = new URLSearchParams({
+      scopePath: state.scopePath || ".",
+      projectPath: els.deployProjectPath.value.trim() || ".",
+      serviceName: els.deployServiceName.value.trim()
+    });
+    const data = await request(`/api/deploy/status?${query.toString()}`);
+    renderScopeSummary(data.scopeRoot || "");
+    renderDeployResult(data);
+    addMessage("system", "Deployment status loaded.");
+  } catch (error) {
+    addMessage("system", error.message);
+    els.deployOutput.textContent = error.message;
+  }
+}
+
 async function submitChat(event) {
   event.preventDefault();
   const content = els.messageInput.value.trim();
@@ -543,6 +620,19 @@ function bindEvents() {
   });
   els.gitCommit.addEventListener("click", commitGitChanges);
   els.gitPush.addEventListener("click", pushGitChanges);
+  els.deployStatus.addEventListener("click", loadDeployStatus);
+  els.deployClone.addEventListener("click", () => {
+    runDeployAction("/api/deploy/clone", deployPayload(), "Repository cloned.");
+  });
+  els.deployInstall.addEventListener("click", () => {
+    runDeployAction("/api/deploy/install", deployPayload(), "Dependencies installed.");
+  });
+  els.deployService.addEventListener("click", () => {
+    runDeployAction("/api/deploy/service", deployPayload(), "PM2 service created.");
+  });
+  els.deployUpdate.addEventListener("click", () => {
+    runDeployAction("/api/deploy/update", deployPayload(), "Project updated.");
+  });
   els.chatForm.addEventListener("submit", submitChat);
 
   els.includeFile.addEventListener("change", () => {

@@ -5,6 +5,13 @@ const { exec } = require("child_process");
 const { URL } = require("url");
 
 const { loadConfig, saveConfig } = require("./lib/config");
+const {
+  cloneRepository,
+  createPm2Service,
+  installDependencies,
+  readDeployStatus,
+  updateProject
+} = require("./lib/deploy");
 const { commitAll, pushCurrentBranch, readGitSnapshot } = require("./lib/git");
 const { sendChat } = require("./lib/providers");
 const { listSkills, loadSkillsByIds } = require("./lib/skills");
@@ -314,6 +321,108 @@ async function handleApi(request, response, requestUrl) {
       sendJson(response, 200, {
         ...snapshot,
         output: result.combined || result.stdout || "(push completed)",
+        scopePath: scope.path,
+        scopeRoot: scope.root
+      });
+      return;
+    }
+
+    if (request.method === "GET" && requestUrl.pathname === "/api/deploy/status") {
+      const config = loadConfig();
+      const scope = resolveScope(config.workspaceRoot, readScopePath(requestUrl));
+      const projectPath = requestUrl.searchParams.get("projectPath") || ".";
+      const serviceName = requestUrl.searchParams.get("serviceName") || "";
+      const result = await readDeployStatus(scope.root, projectPath, serviceName);
+
+      if (!result.ok) {
+        sendJson(response, 400, { error: result.output || "Failed to read deployment status." });
+        return;
+      }
+
+      sendJson(response, 200, {
+        ...result,
+        scopePath: scope.path,
+        scopeRoot: scope.root
+      });
+      return;
+    }
+
+    if (request.method === "POST" && requestUrl.pathname === "/api/deploy/clone") {
+      const config = loadConfig();
+      const body = await parseBody(request);
+      const scope = resolveScope(config.workspaceRoot, readScopePath(requestUrl, body));
+      const result = await cloneRepository(scope.root, body.repoUrl, body.targetPath, body.branch);
+
+      if (!result.ok) {
+        sendJson(response, 400, { error: result.output || "Failed to clone repository." });
+        return;
+      }
+
+      sendJson(response, 200, {
+        ...result,
+        scopePath: scope.path,
+        scopeRoot: scope.root
+      });
+      return;
+    }
+
+    if (request.method === "POST" && requestUrl.pathname === "/api/deploy/install") {
+      const config = loadConfig();
+      const body = await parseBody(request);
+      const scope = resolveScope(config.workspaceRoot, readScopePath(requestUrl, body));
+      const result = await installDependencies(scope.root, body.projectPath, body.installCommand);
+
+      if (!result.ok) {
+        sendJson(response, 400, { error: result.output || "Failed to install dependencies." });
+        return;
+      }
+
+      sendJson(response, 200, {
+        ...result,
+        scopePath: scope.path,
+        scopeRoot: scope.root
+      });
+      return;
+    }
+
+    if (request.method === "POST" && requestUrl.pathname === "/api/deploy/service") {
+      const config = loadConfig();
+      const body = await parseBody(request);
+      const scope = resolveScope(config.workspaceRoot, readScopePath(requestUrl, body));
+      const result = await createPm2Service(
+        scope.root,
+        body.projectPath,
+        body.serviceName,
+        body.serviceMode,
+        body.serviceTarget
+      );
+
+      if (!result.ok) {
+        sendJson(response, 400, { error: result.output || "Failed to create PM2 service." });
+        return;
+      }
+
+      sendJson(response, 200, {
+        ...result,
+        scopePath: scope.path,
+        scopeRoot: scope.root
+      });
+      return;
+    }
+
+    if (request.method === "POST" && requestUrl.pathname === "/api/deploy/update") {
+      const config = loadConfig();
+      const body = await parseBody(request);
+      const scope = resolveScope(config.workspaceRoot, readScopePath(requestUrl, body));
+      const result = await updateProject(scope.root, body);
+
+      if (!result.ok) {
+        sendJson(response, 400, { error: result.output || "Failed to update project." });
+        return;
+      }
+
+      sendJson(response, 200, {
+        ...result,
         scopePath: scope.path,
         scopeRoot: scope.root
       });
