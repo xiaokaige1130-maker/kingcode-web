@@ -5,6 +5,7 @@ const { exec } = require("child_process");
 const { URL } = require("url");
 
 const { loadConfig, saveConfig } = require("./lib/config");
+const { commitAll, pushCurrentBranch, readGitSnapshot } = require("./lib/git");
 const { sendChat } = require("./lib/providers");
 const { listSkills, loadSkillsByIds } = require("./lib/skills");
 const {
@@ -253,6 +254,66 @@ async function handleApi(request, response, requestUrl) {
       const result = await runWorkspaceCommand(scope.root, body.command || "");
       sendJson(response, 200, {
         ...result,
+        scopePath: scope.path,
+        scopeRoot: scope.root
+      });
+      return;
+    }
+
+    if (request.method === "GET" && requestUrl.pathname === "/api/git/status") {
+      const config = loadConfig();
+      const scope = resolveScope(config.workspaceRoot, readScopePath(requestUrl));
+      const snapshot = await readGitSnapshot(scope.root);
+      sendJson(response, 200, {
+        ...snapshot,
+        scopePath: scope.path,
+        scopeRoot: scope.root
+      });
+      return;
+    }
+
+    if (request.method === "POST" && requestUrl.pathname === "/api/git/commit") {
+      const config = loadConfig();
+      const body = await parseBody(request);
+      const scope = resolveScope(config.workspaceRoot, readScopePath(requestUrl, body));
+      const message = typeof body.message === "string" ? body.message.trim() : "";
+
+      if (!message) {
+        sendJson(response, 400, { error: "Commit message is required." });
+        return;
+      }
+
+      const result = await commitAll(scope.root, message);
+      if (!result.ok) {
+        sendJson(response, 400, { error: result.combined || "Git commit failed." });
+        return;
+      }
+
+      const snapshot = await readGitSnapshot(scope.root);
+      sendJson(response, 200, {
+        ...snapshot,
+        output: result.combined || result.stdout || "(commit completed)",
+        scopePath: scope.path,
+        scopeRoot: scope.root
+      });
+      return;
+    }
+
+    if (request.method === "POST" && requestUrl.pathname === "/api/git/push") {
+      const config = loadConfig();
+      const body = await parseBody(request);
+      const scope = resolveScope(config.workspaceRoot, readScopePath(requestUrl, body));
+      const result = await pushCurrentBranch(scope.root);
+
+      if (!result.ok) {
+        sendJson(response, 400, { error: result.combined || "Git push failed." });
+        return;
+      }
+
+      const snapshot = await readGitSnapshot(scope.root);
+      sendJson(response, 200, {
+        ...snapshot,
+        output: result.combined || result.stdout || "(push completed)",
         scopePath: scope.path,
         scopeRoot: scope.root
       });

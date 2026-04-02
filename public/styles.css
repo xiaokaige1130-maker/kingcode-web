@@ -229,6 +229,13 @@ label span,
   font-family: "Cascadia Code", "Consolas", monospace;
 }
 
+.light-terminal {
+  min-height: 220px;
+  max-height: 320px;
+  background: rgba(255, 251, 245, 0.92);
+  color: var(--text);
+}
+
 .composer {
   display: grid;
   gap: 0.8rem;

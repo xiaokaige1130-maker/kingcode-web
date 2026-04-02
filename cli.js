@@ -5,6 +5,7 @@ const { exec } = require("child_process");
 const { stdin, stdout, stderr } = require("process");
 
 const { loadConfig } = require("./lib/config");
+const { commitAll, pushCurrentBranch, readGitSnapshot } = require("./lib/git");
 const { sendChatStream } = require("./lib/providers");
 const { listSkills, loadSkillsByIds } = require("./lib/skills");
 const {
@@ -110,6 +111,9 @@ function printHelp() {
     "/files                    List included files",
     "/write <path>             Write a file from multiline input, finish with .end",
     "/run <command>            Run a shell command inside the workspace",
+    "/git status               Show Git branch, remotes, and working tree status",
+    "/git commit <message>     Stage all repo changes and create a commit",
+    "/git push                 Push the current branch using existing upstream",
     "/clearcmd                 Clear saved command output from chat context",
     "/exit                     Quit"
   ].join("\n"));
@@ -363,6 +367,69 @@ async function handleSlashCommand(rl, config, state, line) {
       state.recentCommandOutput = result.combined;
       printBlock(`Command exit ${result.code}`, result.combined || "(no output)");
       return;
+    }
+    case "/git": {
+      const scope = resolveScope(config.workspaceRoot, state.scopePath);
+      const subcommand = (args[0] || "").toLowerCase();
+      const gitRest = rest.replace(/^\/git\s+/, "");
+
+      if (!subcommand) {
+        throw new Error("Usage: /git <status|commit|push>");
+      }
+
+      if (subcommand === "status") {
+        const snapshot = await readGitSnapshot(scope.root);
+        printBlock("Git Status", [
+          `Repo Root: ${snapshot.repoRoot}`,
+          `Branch: ${snapshot.branch}`,
+          "",
+          "Remotes:",
+          snapshot.remotesText,
+          "",
+          "Status:",
+          snapshot.statusText
+        ].join("\n"));
+        return;
+      }
+
+      if (subcommand === "commit") {
+        const message = gitRest.replace(/^commit\s+/, "").trim();
+        if (!message) {
+          throw new Error("Usage: /git commit <message>");
+        }
+
+        const result = await commitAll(scope.root, message);
+        if (!result.ok) {
+          throw new Error(result.combined || "Git commit failed.");
+        }
+
+        const snapshot = await readGitSnapshot(scope.root);
+        printBlock("Git Commit", [
+          result.combined || "(commit completed)",
+          "",
+          `Branch: ${snapshot.branch}`,
+          snapshot.statusText
+        ].join("\n"));
+        return;
+      }
+
+      if (subcommand === "push") {
+        const result = await pushCurrentBranch(scope.root);
+        if (!result.ok) {
+          throw new Error(result.combined || "Git push failed.");
+        }
+
+        const snapshot = await readGitSnapshot(scope.root);
+        printBlock("Git Push", [
+          result.combined || "(push completed)",
+          "",
+          `Branch: ${snapshot.branch}`,
+          snapshot.statusText
+        ].join("\n"));
+        return;
+      }
+
+      throw new Error("Usage: /git <status|commit|push>");
     }
     case "/clearcmd":
       state.recentCommandOutput = "";

@@ -73,6 +73,9 @@ CLI commands:
 - `/include <path>`
 - `/write <path>`
 - `/run <command>`
+- `/git status`
+- `/git commit <message>`
+- `/git push`
 - `/clearcmd`
 
 Plain text input sends a chat request using the active workflow plus any included files and recent command output.
@@ -95,6 +98,19 @@ Both Web and CLI also support a scoped working area inside the configured worksp
 - CLI: use `/scope <path>`
 
 File browsing, command execution, selected files, and skill discovery all follow the active scope.
+
+## Git helpers
+
+KingCode now includes minimal Git helpers on top of the existing command runner.
+
+- CLI:
+  - `/git status`
+  - `/git commit <message>`
+  - `/git push`
+- Web:
+  - a `Git Panel` in the right sidebar with status, commit, and push actions
+
+These helpers still rely on local Git configuration and credentials. They do not create GitHub repositories or manage authentication for you.
 
 ## Provider model
 

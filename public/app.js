@@ -37,6 +37,9 @@ const els = {
   fileEditor: document.querySelector("#file-editor"),
   commandInput: document.querySelector("#command-input"),
   commandOutput: document.querySelector("#command-output"),
+  gitSummary: document.querySelector("#git-summary"),
+  gitStatusOutput: document.querySelector("#git-status-output"),
+  gitCommitMessage: document.querySelector("#git-commit-message"),
   messageTemplate: document.querySelector("#message-template"),
   saveConfig: document.querySelector("#save-config"),
   deleteProfile: document.querySelector("#delete-profile"),
@@ -46,7 +49,10 @@ const els = {
   refreshTree: document.querySelector("#refresh-tree"),
   refreshSkills: document.querySelector("#refresh-skills"),
   saveFile: document.querySelector("#save-file"),
-  runCommand: document.querySelector("#run-command")
+  runCommand: document.querySelector("#run-command"),
+  refreshGit: document.querySelector("#refresh-git"),
+  gitCommit: document.querySelector("#git-commit"),
+  gitPush: document.querySelector("#git-push")
 };
 
 async function request(url, options = {}) {
@@ -78,6 +84,17 @@ function renderScopeSummary(scopeRoot = "") {
   els.scopeSummary.textContent = scopeRoot
     ? `Scope: ${scopePath} (${scopeRoot})`
     : `Scope: ${scopePath}`;
+}
+
+function renderGitStatus(data) {
+  els.gitSummary.textContent = `Git: ${data.branch} (${data.repoRoot})`;
+  els.gitStatusOutput.textContent = [
+    "Remotes:",
+    data.remotesText || "(no remotes)",
+    "",
+    "Status:",
+    data.statusText || "Working tree clean."
+  ].join("\n");
 }
 
 function renderProfileOptions() {
@@ -206,6 +223,8 @@ function resetScopeSessionState() {
   els.editorPath.textContent = "No file selected";
   els.fileEditor.value = "";
   els.commandOutput.textContent = "";
+  els.gitSummary.textContent = "Git status has not been loaded yet.";
+  els.gitStatusOutput.textContent = "";
   syncIncludeCheckbox();
   renderMessages();
 }
@@ -421,6 +440,52 @@ async function runCommand() {
   addMessage("system", `Command finished with code ${result.code}.`);
 }
 
+async function loadGitStatus() {
+  const data = await request(`/api/git/status?scopePath=${encodeURIComponent(state.scopePath || ".")}`);
+  renderScopeSummary(data.scopeRoot || "");
+  renderGitStatus(data);
+}
+
+async function commitGitChanges() {
+  const message = els.gitCommitMessage.value.trim();
+  if (!message) {
+    addMessage("system", "Enter a commit message first.");
+    return;
+  }
+
+  try {
+    const data = await request("/api/git/commit", {
+      method: "POST",
+      body: JSON.stringify({
+        message,
+        scopePath: state.scopePath
+      })
+    });
+    els.gitCommitMessage.value = "";
+    renderScopeSummary(data.scopeRoot || "");
+    renderGitStatus(data);
+    addMessage("system", data.output || "Git commit completed.");
+  } catch (error) {
+    addMessage("system", error.message);
+  }
+}
+
+async function pushGitChanges() {
+  try {
+    const data = await request("/api/git/push", {
+      method: "POST",
+      body: JSON.stringify({
+        scopePath: state.scopePath
+      })
+    });
+    renderScopeSummary(data.scopeRoot || "");
+    renderGitStatus(data);
+    addMessage("system", data.output || "Git push completed.");
+  } catch (error) {
+    addMessage("system", error.message);
+  }
+}
+
 async function submitChat(event) {
   event.preventDefault();
   const content = els.messageInput.value.trim();
@@ -473,6 +538,11 @@ function bindEvents() {
   els.refreshSkills.addEventListener("click", loadSkills);
   els.saveFile.addEventListener("click", saveCurrentFile);
   els.runCommand.addEventListener("click", runCommand);
+  els.refreshGit.addEventListener("click", () => {
+    loadGitStatus().catch((error) => addMessage("system", error.message));
+  });
+  els.gitCommit.addEventListener("click", commitGitChanges);
+  els.gitPush.addEventListener("click", pushGitChanges);
   els.chatForm.addEventListener("submit", submitChat);
 
   els.includeFile.addEventListener("change", () => {
@@ -508,6 +578,12 @@ async function init() {
   bindEvents();
   await loadTree(".");
   await loadSkills();
+  try {
+    await loadGitStatus();
+  } catch (error) {
+    els.gitSummary.textContent = error.message;
+    els.gitStatusOutput.textContent = "";
+  }
   addMessage("system", "KingCode is ready.");
 }
 

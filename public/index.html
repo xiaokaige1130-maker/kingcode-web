@@ -176,6 +176,23 @@
           </div>
           <pre id="command-output" class="terminal"></pre>
         </section>
+
+        <section class="card">
+          <div class="section-head">
+            <h2>Git Panel</h2>
+            <button id="refresh-git" class="ghost">Refresh</button>
+          </div>
+          <div id="git-summary" class="hint">Git status has not been loaded yet.</div>
+          <textarea id="git-status-output" rows="10" class="terminal light-terminal" placeholder="Git branch, remotes, and status will appear here." readonly></textarea>
+          <label>
+            <span>Commit Message</span>
+            <input id="git-commit-message" type="text" placeholder="Describe this change">
+          </label>
+          <div class="button-row">
+            <button id="git-commit">Commit All</button>
+            <button id="git-push" class="ghost">Push</button>
+          </div>
+        </section>
       </aside>
     </div>
 
