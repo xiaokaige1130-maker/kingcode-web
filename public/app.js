@@ -350,7 +350,7 @@ async function init() {
   renderProfileForm();
   bindEvents();
   await loadTree(".");
-  addMessage("system", "OmniCode Web is ready.");
+  addMessage("system", "KingCode is ready.");
 }
 
 init().catch((error) => {

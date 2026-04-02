@@ -244,5 +244,5 @@ const server = http.createServer(async (request, response) => {
 });
 
 server.listen(PORT, () => {
-  console.log(`OmniCode Web listening on http://localhost:${PORT}`);
+  console.log(`KingCode listening on http://localhost:${PORT}`);
 });

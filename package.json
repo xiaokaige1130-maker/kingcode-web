@@ -1,9 +1,10 @@
-﻿{
-  "name": "omnicode-web",
+{
+  "name": "kingcode",
   "version": "0.1.0",
   "private": true,
   "description": "Provider-agnostic coding assistant with a local Web UI",
   "scripts": {
+    "cli": "node cli.js",
     "start": "node server.js",
     "check": "node --check server.js"
   }

@@ -1,6 +1,10 @@
-﻿# OmniCode Web
+# KingCode
 
-OmniCode Web is a local coding assistant with a browser UI. It was designed as a practical alternative to Claude Code's public extension model, while staying provider-agnostic so you can connect different AI APIs instead of being locked to one backend.
+中文使用说明请看：
+
+[`docs/使用说明.md`](C:/Users/云电脑/Desktop/omnicode-web/docs/使用说明.md)
+
+KingCode is a local coding assistant with a browser UI. It was designed as a practical alternative to Claude Code's public extension model, while staying provider-agnostic so you can connect different AI APIs instead of being locked to one backend.
 
 ## What the public Claude Code repo actually exposes
 
@@ -41,6 +45,27 @@ npm start
 ```
 
 Then open `http://localhost:4780`.
+
+## Terminal mode
+
+```bash
+cd omnicode-web
+npm run cli
+```
+
+CLI commands:
+
+- `/help`
+- `/profiles`
+- `/profile <id>`
+- `/workflow <id>`
+- `/tree [path]`
+- `/open <path>`
+- `/include <path>`
+- `/write <path>`
+- `/run <command>`
+
+Plain text input sends a chat request using the active workflow plus any included files and recent command output.
 
 ## Provider model
 
