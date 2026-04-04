@@ -6,21 +6,25 @@ const { URL } = require("url");
 
 const { loadConfig, saveConfig } = require("./lib/config");
 const {
+  collectOpsSnapshot,
   cloneRepository,
   createPm2Service,
   createSystemdService,
   installDependencies,
+  listLocalServices,
   readCommitHistory,
   readDeployStatus,
   readDeployHistory,
   readServiceLogs,
   rollbackProject,
+  runOpsAudit,
   runDockerCompose,
   runHealthCheck,
+  syncProjectFromRemote,
   updateProject
 } = require("./lib/deploy");
 const { commitAll, pushCurrentBranch, readGitSnapshot } = require("./lib/git");
-const { sendChat } = require("./lib/providers");
+const { sendChat, sendChatStream } = require("./lib/providers");
 const { listSkills, loadSkillsByIds } = require("./lib/skills");
 const {
   assertInsideWorkspace,
@@ -133,6 +137,21 @@ function workflowPrompt(workflowId) {
       return "Review the provided code like a senior reviewer. Lead with concrete risks, regressions, and missing tests.";
     case "implement":
       return "Propose the smallest correct implementation and include concrete code where helpful.";
+    case "ops":
+      return [
+        "Act as a backend operations assistant.",
+        "Prioritize production-safe diagnosis using the provided workspace, logs, deploy status, and health checks.",
+        "Answer in Chinese.",
+        "State the likely fault domain first, then the safest next action.",
+        "Keep the answer short by default: 3 to 6 short lines or bullets.",
+        "Do not expand into long explanations, multiple方案, or broad background unless the user explicitly asks for details.",
+        "Prefer this structure: current issue, likely cause, evidence, next step.",
+        "Default to plain Chinese operational guidance instead of code.",
+        "Do not output code, patches, JSON, shell scripts, or config snippets unless the user explicitly asks for them.",
+        "Keep the answer concise and readable for an operator who may not want implementation details.",
+        "Do not suggest destructive commands unless the user explicitly asks for them.",
+        "If information is missing, say exactly which command, log, or check should be gathered next."
+      ].join(" ");
     default:
       return "";
   }
@@ -143,6 +162,75 @@ function buildScopedConfig(config, scopePath) {
   return {
     ...config,
     workspaceRoot: scope.root
+  };
+}
+
+function buildCapabilities(config) {
+  return {
+    product: "KingCode",
+    summary: "面向当前工作区的本地运维助手，重点服务于这台 Ubuntu 机器上的项目维护、更新、巡检和排错。",
+    workflows: [
+      {
+        id: "analyze",
+        label: "分析",
+        purpose: "分析项目结构，解释主要模块和整体架构。"
+      },
+      {
+        id: "plan",
+        label: "计划",
+        purpose: "拆解实现步骤、风险点和可能改动的文件。"
+      },
+      {
+        id: "review",
+        label: "审查",
+        purpose: "审查代码，优先指出缺陷、回归风险和缺失测试。"
+      },
+      {
+        id: "implement",
+        label: "实现",
+        purpose: "给出或产出最小且正确的实现方案。"
+      },
+      {
+        id: "ops",
+        label: "运维",
+        purpose: "充当本机 Ubuntu 运维助手，重点处理服务诊断、GitHub 更新、日志分析、健康检查和安全处置建议。"
+      }
+    ],
+    tools: [
+      "浏览当前作用范围内的目录",
+      "读取和编辑当前作用范围内的文件",
+      "把选中的文件加入对话上下文",
+      "在当前作用范围内执行本地命令",
+      "查看 Git 分支、远端和工作区状态",
+      "创建 Git 提交并推送当前分支",
+      "把仓库克隆到当前工作区",
+      "按自定义安装命令安装依赖",
+      "创建 PM2 服务",
+      "在 Linux 上生成或安装 systemd 服务",
+      "查看当前机器上的 PM2、systemd、Docker 和 Docker Compose 服务",
+      "读取 PM2、systemd 或 Docker Compose 日志",
+      "对当前服务或项目执行一次运维巡检",
+      "执行 Docker Compose 常用动作",
+      "对 HTTP 或 HTTPS 地址执行健康检查",
+      "查看部署历史和最近提交记录",
+      "更新已部署项目",
+      "从 GitHub 或已配置的 Git 远端拉取更新、重启服务并验证状态",
+      "把项目回滚到指定 Git 提交",
+      "收集运维快照，用于故障排查"
+    ],
+    scopeRules: [
+      `当前工作区根目录是 ${config.workspaceRoot}`,
+      "文件浏览、编辑、命令执行和 skill 发现都受当前作用范围限制。",
+      "已选文件和最近命令输出会自动注入对话上下文。"
+    ],
+    limits: [
+      "没有内建 SSH 远程主机管理或多机集群管理",
+      "没有内建告警中心、定时任务编排或监控大盘",
+      "没有原生多智能体协作",
+      "Web 端回复目前不是流式显示",
+      "运维模式默认只讲人话结论，不会主动输出代码，除非你明确要求",
+      "这个助手主要面向和 KingCode 运行在同一台 Ubuntu 机器上的服务"
+    ]
   };
 }
 
@@ -191,6 +279,42 @@ function readScopePath(requestUrl, body) {
   return requestUrl.searchParams.get("scopePath") || ".";
 }
 
+function buildChatMessages(config, scopePath, body) {
+  const selectedFilePaths = Array.isArray(body.selectedFilePaths) ? body.selectedFilePaths : [];
+  const selectedSkillIds = Array.isArray(body.selectedSkillIds) ? body.selectedSkillIds : [];
+  const recentCommandOutput = typeof body.recentCommandOutput === "string" ? body.recentCommandOutput : "";
+  const userMessages = Array.isArray(body.messages) ? body.messages : [];
+  const contextBundle = buildContextBundle(config, scopePath, selectedFilePaths, recentCommandOutput);
+  const skillBundle = buildSkillBundle(config, scopePath, selectedSkillIds);
+  const promptPrefix = workflowPrompt(body.workflowId);
+
+  return [
+    { role: "system", content: config.systemPrompt },
+    {
+      role: "system",
+      content: [
+        "Answer in Chinese by default.",
+        "For simple capability questions such as 你能做什么、你是谁、怎么用、能不能当我的运维助手, keep the reply short.",
+        "Default to 3 to 6 short lines or bullets.",
+        "Do not output code, JSON, config examples, or long方案 unless the user explicitly asks for them."
+      ].join(" ")
+    },
+    ...(skillBundle ? [{
+      role: "system",
+      content: `Apply the following skills when relevant.\n\n${skillBundle}`
+    }] : []),
+    {
+      role: "user",
+      content: [
+        "Use the following workspace context when answering.",
+        contextBundle,
+        promptPrefix ? `Workflow instruction: ${promptPrefix}` : ""
+      ].filter(Boolean).join("\n\n")
+    },
+    ...userMessages
+  ];
+}
+
 async function handleApi(request, response, requestUrl) {
   try {
     if (request.method === "GET" && requestUrl.pathname === "/api/health") {
@@ -200,6 +324,12 @@ async function handleApi(request, response, requestUrl) {
 
     if (request.method === "GET" && requestUrl.pathname === "/api/config") {
       sendJson(response, 200, loadConfig());
+      return;
+    }
+
+    if (request.method === "GET" && requestUrl.pathname === "/api/capabilities") {
+      const config = loadConfig();
+      sendJson(response, 200, buildCapabilities(config));
       return;
     }
 
@@ -554,33 +684,77 @@ async function handleApi(request, response, requestUrl) {
       return;
     }
 
+    if (request.method === "POST" && requestUrl.pathname === "/api/ops/snapshot") {
+      const config = loadConfig();
+      const body = await parseBody(request);
+      const scope = resolveScope(config.workspaceRoot, readScopePath(requestUrl, body));
+      const result = await collectOpsSnapshot(scope.root, body);
+
+      if (!result.ok) {
+        sendJson(response, 400, { error: result.output || "Failed to collect operations snapshot." });
+        return;
+      }
+
+      sendJson(response, 200, {
+        ...result,
+        scopePath: scope.path,
+        scopeRoot: scope.root
+      });
+      return;
+    }
+
+    if (request.method === "POST" && requestUrl.pathname === "/api/ops/services") {
+      const config = loadConfig();
+      const body = await parseBody(request);
+      const scope = resolveScope(config.workspaceRoot, readScopePath(requestUrl, body));
+      const result = await listLocalServices(scope.root, body);
+
+      sendJson(response, 200, {
+        ...result,
+        scopePath: scope.path,
+        scopeRoot: scope.root
+      });
+      return;
+    }
+
+    if (request.method === "POST" && requestUrl.pathname === "/api/ops/audit") {
+      const config = loadConfig();
+      const body = await parseBody(request);
+      const scope = resolveScope(config.workspaceRoot, readScopePath(requestUrl, body));
+      const result = await runOpsAudit(scope.root, body);
+
+      sendJson(response, 200, {
+        ...result,
+        scopePath: scope.path,
+        scopeRoot: scope.root
+      });
+      return;
+    }
+
+    if (request.method === "POST" && requestUrl.pathname === "/api/ops/sync") {
+      const config = loadConfig();
+      const body = await parseBody(request);
+      const scope = resolveScope(config.workspaceRoot, readScopePath(requestUrl, body));
+      const result = await syncProjectFromRemote(scope.root, body);
+
+      if (!result.ok) {
+        sendJson(response, 400, { error: result.output || "Failed to sync project from remote." });
+        return;
+      }
+
+      sendJson(response, 200, {
+        ...result,
+        scopePath: scope.path,
+        scopeRoot: scope.root
+      });
+      return;
+    }
+
     if (request.method === "POST" && requestUrl.pathname === "/api/chat") {
       const config = loadConfig();
       const body = await parseBody(request);
       const scope = resolveScope(config.workspaceRoot, readScopePath(requestUrl, body));
-      const selectedFilePaths = Array.isArray(body.selectedFilePaths) ? body.selectedFilePaths : [];
-      const selectedSkillIds = Array.isArray(body.selectedSkillIds) ? body.selectedSkillIds : [];
-      const recentCommandOutput = typeof body.recentCommandOutput === "string" ? body.recentCommandOutput : "";
-      const userMessages = Array.isArray(body.messages) ? body.messages : [];
-      const contextBundle = buildContextBundle(config, scope.path, selectedFilePaths, recentCommandOutput);
-      const skillBundle = buildSkillBundle(config, scope.path, selectedSkillIds);
-      const promptPrefix = workflowPrompt(body.workflowId);
-      const finalMessages = [
-        { role: "system", content: config.systemPrompt },
-        ...(skillBundle ? [{
-          role: "system",
-          content: `Apply the following skills when relevant.\n\n${skillBundle}`
-        }] : []),
-        {
-          role: "user",
-          content: [
-            "Use the following workspace context when answering.",
-            contextBundle,
-            promptPrefix ? `Workflow instruction: ${promptPrefix}` : ""
-          ].filter(Boolean).join("\n\n")
-        },
-        ...userMessages
-      ];
+      const finalMessages = buildChatMessages(config, scope.path, body);
 
       const content = await sendChat(config, body.profileId || config.activeProfileId, finalMessages);
       sendJson(response, 200, {
@@ -588,6 +762,39 @@ async function handleApi(request, response, requestUrl) {
         scopePath: scope.path,
         scopeRoot: scope.root
       });
+      return;
+    }
+
+    if (request.method === "POST" && requestUrl.pathname === "/api/chat/stream") {
+      const config = loadConfig();
+      const body = await parseBody(request);
+      const scope = resolveScope(config.workspaceRoot, readScopePath(requestUrl, body));
+      const finalMessages = buildChatMessages(config, scope.path, body);
+
+      response.writeHead(200, {
+        "Content-Type": "text/event-stream; charset=utf-8",
+        "Cache-Control": "no-store",
+        Connection: "keep-alive"
+      });
+
+      try {
+        const content = await sendChatStream(config, body.profileId || config.activeProfileId, finalMessages, {
+          async onToken(token) {
+            response.write(`data: ${JSON.stringify({ type: "token", token })}\n\n`);
+          }
+        });
+
+        response.write(`data: ${JSON.stringify({
+          type: "done",
+          content,
+          scopePath: scope.path,
+          scopeRoot: scope.root
+        })}\n\n`);
+      } catch (error) {
+        response.write(`data: ${JSON.stringify({ type: "error", error: error.message || "Chat stream failed." })}\n\n`);
+      }
+
+      response.end();
       return;
     }
 

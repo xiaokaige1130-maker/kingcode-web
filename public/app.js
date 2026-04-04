@@ -11,6 +11,26 @@ const state = {
   recentCommandOutput: ""
 };
 
+const SKILL_LABELS = {
+  "backend-ops": "后端运维助手",
+  "docker-compose-audit": "Docker / Compose 检查",
+  "github-actions-ci": "GitHub Actions 检查",
+  "grounded-analysis": "基于上下文分析",
+  "secrets-audit": "密钥泄露检查",
+  "security-review": "安全审查",
+  "sentry-readonly": "Sentry 只读排错",
+  "stack-readiness": "部署就绪检查"
+};
+
+const SKILL_SOURCE_LABELS = {
+  app: "应用内置",
+  workspace: "工作区",
+  claude: "Claude 风格",
+  codex: "Codex 风格",
+  openclaw: "OpenClaw 风格",
+  custom: "自定义"
+};
+
 const els = {
   profileSelect: document.querySelector("#profile-select"),
   profileName: document.querySelector("#profile-name"),
@@ -31,6 +51,8 @@ const els = {
   treePath: document.querySelector("#tree-path"),
   fileTree: document.querySelector("#file-tree"),
   skillsList: document.querySelector("#skills-list"),
+  capabilitiesSummary: document.querySelector("#capabilities-summary"),
+  capabilitiesOutput: document.querySelector("#capabilities-output"),
   messages: document.querySelector("#messages"),
   messageInput: document.querySelector("#message-input"),
   chatForm: document.querySelector("#chat-form"),
@@ -68,6 +90,7 @@ const els = {
   resetScope: document.querySelector("#reset-scope"),
   refreshTree: document.querySelector("#refresh-tree"),
   refreshSkills: document.querySelector("#refresh-skills"),
+  refreshCapabilities: document.querySelector("#refresh-capabilities"),
   saveFile: document.querySelector("#save-file"),
   runCommand: document.querySelector("#run-command"),
   refreshGit: document.querySelector("#refresh-git"),
@@ -82,6 +105,10 @@ const els = {
   deployHealth: document.querySelector("#deploy-health"),
   deployHistory: document.querySelector("#deploy-history"),
   deployCommits: document.querySelector("#deploy-commits"),
+  deployServices: document.querySelector("#deploy-services"),
+  deployAudit: document.querySelector("#deploy-audit"),
+  deploySync: document.querySelector("#deploy-sync"),
+  deployOpsSnapshot: document.querySelector("#deploy-ops-snapshot"),
   deployRollback: document.querySelector("#deploy-rollback"),
   deployCompose: document.querySelector("#deploy-compose"),
   deployUpdate: document.querySelector("#deploy-update"),
@@ -116,11 +143,18 @@ function renderScopeSummary(scopeRoot = "") {
   const scopePath = state.scopePath || ".";
   els.scopePath.value = scopePath;
   els.scopeSummary.textContent = scopeRoot
-    ? `Scope: ${scopePath} (${scopeRoot})`
-    : `Scope: ${scopePath}`;
+    ? `作用范围：${scopePath} (${scopeRoot})`
+    : `作用范围：${scopePath}`;
 }
 
 function renderGitStatus(data) {
+  state.recentCommandOutput = [
+    "Remotes:",
+    data.remotesText || "(no remotes)",
+    "",
+    "Status:",
+    data.statusText || "Working tree clean."
+  ].join("\n");
   els.gitSummary.textContent = `Git: ${data.branch} (${data.repoRoot})`;
   els.gitStatusOutput.textContent = [
     "Remotes:",
@@ -140,9 +174,12 @@ function renderHeaderMeta() {
 function renderDeployResult(data) {
   const location = data.projectPath || ".";
   const root = data.projectRoot || "";
+  if (data.output) {
+    state.recentCommandOutput = data.output;
+  }
   els.deploySummary.textContent = root
-    ? `Deploy target: ${location} (${root})`
-    : `Deploy target: ${location}`;
+    ? `部署目标：${location} (${root})`
+    : `部署目标：${location}`;
   els.deployOutput.textContent = data.output || "(no output)";
 }
 
@@ -268,13 +305,30 @@ function addMessage(role, content) {
   renderMessages();
 }
 
+function updateLastMessage(content) {
+  if (state.messages.length === 0) {
+    return;
+  }
+  state.messages[state.messages.length - 1].content = content;
+  renderMessages();
+}
+
+async function submitChatFallback(payload) {
+  const data = await request("/api/chat", {
+    method: "POST",
+    body: JSON.stringify(payload)
+  });
+  renderScopeSummary(data.scopeRoot || "");
+  addMessage("assistant", data.content);
+}
+
 function renderSkills() {
   els.skillsList.innerHTML = "";
 
   if (!Array.isArray(state.availableSkills) || state.availableSkills.length === 0) {
     const empty = document.createElement("div");
     empty.className = "hint";
-    empty.textContent = "No skills found.";
+    empty.textContent = "未发现技能包。";
     els.skillsList.append(empty);
     return;
   }
@@ -299,11 +353,11 @@ function renderSkills() {
 
     const title = document.createElement("div");
     title.className = "skill-title";
-    title.textContent = skill.id;
+    title.textContent = SKILL_LABELS[skill.name] || skill.name || skill.id;
 
     const source = document.createElement("div");
     source.className = "skill-source";
-    source.textContent = `Source: ${skill.sourceType}`;
+    source.textContent = `来源：${SKILL_SOURCE_LABELS[skill.sourceType] || skill.sourceType}`;
 
     const desc = document.createElement("div");
     desc.className = "skill-desc";
@@ -313,6 +367,23 @@ function renderSkills() {
     row.append(checkbox, meta);
     els.skillsList.append(row);
   });
+}
+
+function renderCapabilities(data) {
+  els.capabilitiesSummary.textContent = data.summary || "当前能力清单。";
+  els.capabilitiesOutput.textContent = [
+    "工作流：",
+    ...(data.workflows || []).map((item) => `- ${item.label}: ${item.purpose}`),
+    "",
+    "工具能力：",
+    ...(data.tools || []).map((item) => `- ${item}`),
+    "",
+    "范围规则：",
+    ...(data.scopeRules || []).map((item) => `- ${item}`),
+    "",
+    "限制说明：",
+    ...(data.limits || []).map((item) => `- ${item}`)
+  ].join("\n");
 }
 
 function normalizePath(inputPath) {
@@ -325,7 +396,7 @@ function resetScopeSessionState() {
   state.selectedFiles.clear();
   state.messages = [];
   state.recentCommandOutput = "";
-  els.editorPath.textContent = "No file selected";
+  els.editorPath.textContent = "未选择文件";
   els.fileEditor.value = "";
   els.commandOutput.textContent = "";
   els.gitSummary.textContent = "Git status has not been loaded yet.";
@@ -409,6 +480,11 @@ async function loadSkills() {
   renderSkills();
 }
 
+async function loadCapabilities() {
+  const data = await request("/api/capabilities");
+  renderCapabilities(data);
+}
+
 function syncIncludeCheckbox() {
   els.includeFile.checked = state.currentFilePath ? state.selectedFiles.has(state.currentFilePath) : false;
 }
@@ -436,7 +512,7 @@ async function saveConfig() {
   renderProfileOptions();
   renderProfileForm();
   renderScopeSummary(state.config.workspaceRoot);
-  addMessage("system", "Configuration saved.");
+  addMessage("system", "配置已保存。");
   await loadTree(".");
   await loadSkills();
 }
@@ -445,7 +521,7 @@ function newProfile() {
   const id = `profile-${Date.now()}`;
   state.config.profiles.push({
     id,
-    name: "New Profile",
+    name: "新模型配置",
     type: "openai-compatible",
     baseUrl: "",
     path: "",
@@ -488,7 +564,7 @@ async function saveCurrentFile() {
       scopePath: state.scopePath
     })
   });
-  addMessage("system", `Saved ${state.currentFilePath}`);
+  addMessage("system", `已保存 ${state.currentFilePath}`);
 }
 
 async function applyScope(nextScopePath = els.scopePath.value.trim() || ".") {
@@ -508,7 +584,7 @@ async function applyScope(nextScopePath = els.scopePath.value.trim() || ".") {
   try {
     await loadTree(".");
     await loadSkills();
-    addMessage("system", `Scope switched to ${state.scopePath}.`);
+    addMessage("system", `已切换作用范围到 ${state.scopePath}。`);
   } catch (error) {
     state.scopePath = previousScopePath;
     state.messages = previousMessages;
@@ -519,7 +595,7 @@ async function applyScope(nextScopePath = els.scopePath.value.trim() || ".") {
     state.currentPath = previousCurrentPath;
     els.fileEditor.value = previousEditorValue;
     els.commandOutput.textContent = previousCommandOutput;
-    els.editorPath.textContent = previousCurrentFilePath || "No file selected";
+    els.editorPath.textContent = previousCurrentFilePath || "未选择文件";
     renderMessages();
     syncIncludeCheckbox();
     await loadTree(previousCurrentPath || ".");
@@ -573,7 +649,7 @@ async function commitGitChanges() {
     els.gitCommitMessage.value = "";
     renderScopeSummary(data.scopeRoot || "");
     renderGitStatus(data);
-    addMessage("system", data.output || "Git commit completed.");
+    addMessage("system", data.output || "Git 提交已完成。");
   } catch (error) {
     addMessage("system", error.message);
   }
@@ -589,7 +665,7 @@ async function pushGitChanges() {
     });
     renderScopeSummary(data.scopeRoot || "");
     renderGitStatus(data);
-    addMessage("system", data.output || "Git push completed.");
+    addMessage("system", data.output || "Git 推送已完成。");
   } catch (error) {
     addMessage("system", error.message);
   }
@@ -645,7 +721,7 @@ async function loadDeployStatus() {
     const data = await request(`/api/deploy/status?${query.toString()}`);
     renderScopeSummary(data.scopeRoot || "");
     renderDeployResult(data);
-    addMessage("system", "Deployment status loaded.");
+    addMessage("system", "部署状态已加载。");
   } catch (error) {
     addMessage("system", error.message);
     els.deployOutput.textContent = error.message;
@@ -660,7 +736,7 @@ async function createSystemdUnit() {
     });
     renderScopeSummary(data.scopeRoot || "");
     renderDeployResult(data);
-    addMessage("system", "systemd service processed.");
+    addMessage("system", "systemd 服务已处理。");
   } catch (error) {
     addMessage("system", error.message);
     els.deployOutput.textContent = error.message;
@@ -679,7 +755,7 @@ async function loadDeployLogs() {
     const data = await request(`/api/deploy/logs?${query.toString()}`);
     renderScopeSummary(data.scopeRoot || "");
     renderDeployResult(data);
-    addMessage("system", "Logs loaded.");
+    addMessage("system", "日志已加载。");
   } catch (error) {
     addMessage("system", error.message);
     els.deployOutput.textContent = error.message;
@@ -694,7 +770,7 @@ async function runComposeAction() {
     });
     renderScopeSummary(data.scopeRoot || "");
     renderDeployResult(data);
-    addMessage("system", "Docker Compose command finished.");
+    addMessage("system", "Docker Compose 操作已完成。");
   } catch (error) {
     addMessage("system", error.message);
     els.deployOutput.textContent = error.message;
@@ -708,9 +784,13 @@ async function runHealthCheck() {
       timeout: "8000"
     });
     const data = await request(`/api/deploy/health?${query.toString()}`);
-    els.deploySummary.textContent = `Health check: ${data.statusCode}`;
+    state.recentCommandOutput = [
+      `健康检查目标：${els.deployHealthUrl.value.trim()}`,
+      data.output || "(no output)"
+    ].join("\n");
+    els.deploySummary.textContent = `健康检查：${data.statusCode}`;
     els.deployOutput.textContent = data.output || "(no output)";
-    addMessage("system", "Health check passed.");
+    addMessage("system", "健康检查通过。");
   } catch (error) {
     addMessage("system", error.message);
     els.deployOutput.textContent = error.message;
@@ -729,9 +809,9 @@ async function loadDeployHistory() {
         entry.toCommit ? `To: ${entry.toCommit}` : ""
       ].filter(Boolean).join("\n");
     });
-    els.deploySummary.textContent = "Deployment history";
+    els.deploySummary.textContent = "部署历史";
     els.deployOutput.textContent = lines.length > 0 ? lines.join("\n\n") : "(no history)";
-    addMessage("system", "Deployment history loaded.");
+    addMessage("system", "部署历史已加载。");
   } catch (error) {
     addMessage("system", error.message);
     els.deployOutput.textContent = error.message;
@@ -748,7 +828,87 @@ async function loadRecentCommits() {
     const data = await request(`/api/deploy/commits?${query.toString()}`);
     renderScopeSummary(data.scopeRoot || "");
     renderDeployResult(data);
-    addMessage("system", "Recent commits loaded.");
+    addMessage("system", "最近提交已加载。");
+  } catch (error) {
+    addMessage("system", error.message);
+    els.deployOutput.textContent = error.message;
+  }
+}
+
+async function loadOpsSnapshot() {
+  try {
+    const data = await request("/api/ops/snapshot", {
+      method: "POST",
+      body: JSON.stringify(deployPayload())
+    });
+    renderScopeSummary(data.scopeRoot || "");
+    renderDeployResult(data);
+    state.workflowId = "ops";
+    document.querySelectorAll(".chip").forEach((entry) => {
+      entry.classList.toggle("active", entry.dataset.workflow === "ops");
+    });
+    renderHeaderMeta();
+    addMessage("system", "运维快照已写入对话上下文。");
+  } catch (error) {
+    addMessage("system", error.message);
+    els.deployOutput.textContent = error.message;
+  }
+}
+
+async function loadLocalServices() {
+  try {
+    const data = await request("/api/ops/services", {
+      method: "POST",
+      body: JSON.stringify(deployPayload())
+    });
+    renderScopeSummary(data.scopeRoot || "");
+    renderDeployResult(data);
+    state.workflowId = "ops";
+    document.querySelectorAll(".chip").forEach((entry) => {
+      entry.classList.toggle("active", entry.dataset.workflow === "ops");
+    });
+    renderHeaderMeta();
+    addMessage("system", "本机服务清单已加载。");
+  } catch (error) {
+    addMessage("system", error.message);
+    els.deployOutput.textContent = error.message;
+  }
+}
+
+async function runOpsAuditAction() {
+  try {
+    const data = await request("/api/ops/audit", {
+      method: "POST",
+      body: JSON.stringify(deployPayload())
+    });
+    renderScopeSummary(data.scopeRoot || "");
+    renderDeployResult(data);
+    state.workflowId = "ops";
+    document.querySelectorAll(".chip").forEach((entry) => {
+      entry.classList.toggle("active", entry.dataset.workflow === "ops");
+    });
+    renderHeaderMeta();
+    addMessage("system", "运维巡检已完成，并写入对话上下文。");
+  } catch (error) {
+    addMessage("system", error.message);
+    els.deployOutput.textContent = error.message;
+  }
+}
+
+async function syncFromRemote() {
+  try {
+    const data = await request("/api/ops/sync", {
+      method: "POST",
+      body: JSON.stringify(deployPayload())
+    });
+    renderScopeSummary(data.scopeRoot || "");
+    renderDeployResult(data);
+    state.workflowId = "ops";
+    document.querySelectorAll(".chip").forEach((entry) => {
+      entry.classList.toggle("active", entry.dataset.workflow === "ops");
+    });
+    renderHeaderMeta();
+    addMessage("system", "远端同步更新已完成。");
   } catch (error) {
     addMessage("system", error.message);
     els.deployOutput.textContent = error.message;
@@ -769,7 +929,7 @@ async function rollbackDeploy() {
     });
     renderScopeSummary(data.scopeRoot || "");
     renderDeployResult(data);
-    addMessage("system", "Rollback completed.");
+    addMessage("system", "回滚已完成。");
   } catch (error) {
     addMessage("system", error.message);
     els.deployOutput.textContent = error.message;
@@ -797,14 +957,76 @@ async function submitChat(event) {
   };
 
   try {
-    const data = await request("/api/chat", {
+    addMessage("assistant", "");
+
+    const response = await fetch("/api/chat/stream", {
       method: "POST",
+      headers: {
+        "Content-Type": "application/json"
+      },
       body: JSON.stringify(payload)
     });
-    renderScopeSummary(data.scopeRoot || "");
-    addMessage("assistant", data.content);
+
+    if (!response.ok || !response.body) {
+      state.messages.pop();
+      renderMessages();
+      await submitChatFallback(payload);
+      return;
+    }
+
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = "";
+    let assistantContent = "";
+
+    while (true) {
+      const { value, done } = await reader.read();
+      buffer += decoder.decode(value || new Uint8Array(), { stream: !done });
+
+      let boundary = buffer.indexOf("\n\n");
+      while (boundary !== -1) {
+        const rawEvent = buffer.slice(0, boundary);
+        buffer = buffer.slice(boundary + 2);
+
+        const dataLine = rawEvent
+          .split("\n")
+          .find((line) => line.startsWith("data:"));
+
+        if (dataLine) {
+          const payload = JSON.parse(dataLine.slice(5).trim());
+          if (payload.type === "token") {
+            assistantContent += payload.token || "";
+            updateLastMessage(assistantContent);
+          } else if (payload.type === "done") {
+            renderScopeSummary(payload.scopeRoot || "");
+            updateLastMessage(payload.content || assistantContent);
+          } else if (payload.type === "error") {
+            throw new Error(payload.error || "聊天流式请求失败。");
+          }
+        }
+
+        boundary = buffer.indexOf("\n\n");
+      }
+
+      if (done) {
+        if (!assistantContent.trim()) {
+          state.messages.pop();
+          renderMessages();
+          await submitChatFallback(payload);
+        }
+        break;
+      }
+    }
   } catch (error) {
-    addMessage("system", error.message);
+    if (state.messages[state.messages.length - 1]?.role === "assistant") {
+      state.messages.pop();
+      renderMessages();
+    }
+    try {
+      await submitChatFallback(payload);
+    } catch (fallbackError) {
+      addMessage("system", fallbackError.message || error.message);
+    }
   }
 }
 
@@ -827,6 +1049,9 @@ function bindEvents() {
   });
   els.refreshTree.addEventListener("click", () => loadTree(state.currentPath));
   els.refreshSkills.addEventListener("click", loadSkills);
+  els.refreshCapabilities.addEventListener("click", () => {
+    loadCapabilities().catch((error) => addMessage("system", error.message));
+  });
   els.saveFile.addEventListener("click", saveCurrentFile);
   els.runCommand.addEventListener("click", runCommand);
   els.refreshGit.addEventListener("click", () => {
@@ -837,23 +1062,27 @@ function bindEvents() {
   els.deployApplyPreset.addEventListener("click", applyDeployPreset);
   els.deployStatus.addEventListener("click", loadDeployStatus);
   els.deployClone.addEventListener("click", () => {
-    runDeployAction("/api/deploy/clone", deployPayload(), "Repository cloned.");
+    runDeployAction("/api/deploy/clone", deployPayload(), "仓库克隆完成。");
   });
   els.deployInstall.addEventListener("click", () => {
-    runDeployAction("/api/deploy/install", deployPayload(), "Dependencies installed.");
+    runDeployAction("/api/deploy/install", deployPayload(), "依赖安装完成。");
   });
   els.deployService.addEventListener("click", () => {
-    runDeployAction("/api/deploy/service", deployPayload(), "PM2 service created.");
+    runDeployAction("/api/deploy/service", deployPayload(), "PM2 服务已创建。");
   });
   els.deploySystemd.addEventListener("click", createSystemdUnit);
   els.deployLogs.addEventListener("click", loadDeployLogs);
   els.deployHealth.addEventListener("click", runHealthCheck);
   els.deployHistory.addEventListener("click", loadDeployHistory);
   els.deployCommits.addEventListener("click", loadRecentCommits);
+  els.deployServices.addEventListener("click", loadLocalServices);
+  els.deployAudit.addEventListener("click", runOpsAuditAction);
+  els.deploySync.addEventListener("click", syncFromRemote);
+  els.deployOpsSnapshot.addEventListener("click", loadOpsSnapshot);
   els.deployRollback.addEventListener("click", rollbackDeploy);
   els.deployCompose.addEventListener("click", runComposeAction);
   els.deployUpdate.addEventListener("click", () => {
-    runDeployAction("/api/deploy/update", deployPayload(), "Project updated.");
+    runDeployAction("/api/deploy/update", deployPayload(), "项目更新完成。");
   });
   els.chatForm.addEventListener("submit", submitChat);
 
@@ -898,13 +1127,14 @@ async function init() {
   applyDeployPreset();
   await loadTree(".");
   await loadSkills();
+  await loadCapabilities();
   try {
     await loadGitStatus();
   } catch (error) {
     els.gitSummary.textContent = error.message;
     els.gitStatusOutput.textContent = "";
   }
-  addMessage("system", "KingCode is ready.");
+  addMessage("system", "KingCode 已就绪。");
 }
 
 init().catch((error) => {

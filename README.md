@@ -35,7 +35,7 @@ That means the best reproducible path is not "clone the hidden core", but "rebui
   - Generic JSON APIs
 - Workspace browser and file editor
 - Command runner scoped to the chosen workspace root
-- Workflow presets: `Analyze`, `Plan`, `Review`, `Implement`
+- Workflow presets: `Analyze`, `Plan`, `Review`, `Implement`, `Ops`
 
 ## Quick start
 
@@ -80,6 +80,8 @@ CLI commands:
 
 Plain text input sends a chat request using the active workflow plus any included files and recent command output.
 
+`Ops` is tuned for backend maintenance and incident response on the same Ubuntu machine where KingCode is running. It pushes the model to reason from service status, logs, health checks, and recent commits before recommending action.
+
 For `openai-compatible` providers such as `DeepSeek`, the CLI prints tokens incrementally instead of waiting for the full response.
 
 ## Skills and Scope
@@ -99,6 +101,19 @@ Both Web and CLI also support a scoped working area inside the configured worksp
 
 File browsing, command execution, selected files, and skill discovery all follow the active scope.
 
+The repository also ships with a `backend-ops` skill under [`skills/backend-ops/SKILL.md`](./skills/backend-ops/SKILL.md). Enable it when you want stricter production-triage behavior.
+
+Additional adapted skills are also available under [`skills/`](./skills/) and can be toggled from the Web sidebar or discovered in CLI with `/skills`:
+
+- `app:sentry-readonly`
+- `app:github-actions-ci`
+- `app:security-review`
+- `app:docker-compose-audit`
+- `app:secrets-audit`
+- `app:stack-readiness`
+
+These were adapted from public GitHub skills and rewritten to fit KingCode's current local-ops workflow rather than Codex-specific runtime assumptions.
+
 ## Git helpers
 
 KingCode now includes minimal Git helpers on top of the existing command runner.
@@ -107,8 +122,13 @@ KingCode now includes minimal Git helpers on top of the existing command runner.
   - `/git status`
   - `/git commit <message>`
   - `/git push`
+  - `/ops snapshot`
+  - `/ops services`
+  - `/ops audit`
+  - `/ops sync [branch]`
 - Web:
   - a `Git Panel` in the right sidebar with status, commit, and push actions
+  - an `Ops` workflow chip for operations-oriented analysis
 
 These helpers still rely on local Git configuration and credentials. They do not create GitHub repositories or manage authentication for you.
 
@@ -129,6 +149,10 @@ KingCode also includes a first-pass deployment panel for local or current-server
   - rolling a project back to a chosen Git commit
   - updating an existing project by running `git pull`, install, build, and PM2 restart
   - reading basic project and PM2 status
+  - collecting a combined backend operations snapshot that can be sent straight into chat context
+  - listing local PM2, systemd, Docker, and Docker Compose services
+  - running a one-shot local ops audit with logs, ports, disk, memory, and service status
+  - syncing a deployed project from its configured Git remote and verifying status after update
 
 - Presets:
   - `Node Web`
@@ -187,3 +211,12 @@ This is intentionally an MVP:
 - no autonomous tool-calling loop
 
 Those can be added on top of the current adapter and workspace layers without replacing the architecture.
+
+## Capability list
+
+You can inspect the current built-in capability list in two places:
+
+- Web: the `能力清单` card in the left sidebar
+- CLI: run `/capabilities`
+
+This list is generated from the current application capabilities and limits, so it is a better operator-facing reference than reading source files directly.

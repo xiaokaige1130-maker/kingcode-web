@@ -38,10 +38,10 @@
               <label>
                 <span>类型</span>
                 <select id="profile-type">
-                  <option value="openai-compatible">OpenAI Compatible</option>
+                  <option value="openai-compatible">OpenAI 兼容接口</option>
                   <option value="anthropic">Anthropic</option>
                   <option value="gemini">Gemini</option>
-                  <option value="generic-json">Generic JSON API</option>
+                  <option value="generic-json">通用 JSON 接口</option>
                 </select>
               </label>
               <label>
@@ -102,7 +102,7 @@
             </label>
 
             <label>
-              <span>Scope Path</span>
+              <span>作用范围</span>
               <input id="scope-path" type="text" placeholder=".">
             </label>
 
@@ -111,7 +111,7 @@
               <button id="reset-scope" class="ghost">重置</button>
             </div>
 
-            <div id="scope-summary" class="status-pill">Scope: .</div>
+            <div id="scope-summary" class="status-pill">作用范围：.</div>
 
             <label>
               <span>系统提示词</span>
@@ -127,11 +127,20 @@
 
           <section class="panel-card">
             <div class="section-head">
-              <h2>Skills</h2>
+              <h2>技能包</h2>
               <button id="refresh-skills" class="ghost">刷新</button>
             </div>
             <div class="hint">支持当前项目 `skills`、scope 下的 `skills`，以及 `.claude/skills`。</div>
             <div id="skills-list" class="skill-list"></div>
+          </section>
+
+          <section class="panel-card">
+            <div class="section-head">
+              <h2>能力清单</h2>
+              <button id="refresh-capabilities" class="ghost">刷新</button>
+            </div>
+            <div id="capabilities-summary" class="hint">正在加载能力说明。</div>
+            <pre id="capabilities-output" class="terminal light-terminal"></pre>
           </section>
         </div>
       </aside>
@@ -144,11 +153,11 @@
           </div>
           <div class="topbar-meta">
             <div class="meta-chip">
-              <span>Workflow</span>
+              <span>工作流</span>
               <strong id="workflow-label">Analyze</strong>
             </div>
             <div class="meta-chip">
-              <span>Profile</span>
+              <span>模型</span>
               <strong id="active-profile-label">-</strong>
             </div>
           </div>
@@ -160,8 +169,9 @@
             <button class="chip" data-workflow="plan">Plan</button>
             <button class="chip" data-workflow="review">Review</button>
             <button class="chip" data-workflow="implement">Implement</button>
+            <button class="chip" data-workflow="ops">Ops</button>
           </div>
-          <div class="hint">聊天会自动带上当前 scope、已选文件、已启用 skills 和最近命令输出。</div>
+          <div class="hint">聊天会自动带上当前 scope、已选文件、已启用 skills 和最近命令输出。`Ops` 工作流默认短答：先结论，再证据和下一步；不主动输出长篇方案或大段代码，除非你明确要求。</div>
         </section>
 
         <section class="chat-stage panel-card">
@@ -360,6 +370,16 @@
             <div class="button-row">
               <button id="deploy-history" class="ghost">部署历史</button>
               <button id="deploy-commits" class="ghost">最近提交</button>
+            </div>
+
+            <div class="button-row">
+              <button id="deploy-services" class="ghost">服务清单</button>
+              <button id="deploy-audit" class="ghost">运维巡检</button>
+            </div>
+
+            <div class="button-row">
+              <button id="deploy-sync" class="ghost">GitHub 同步更新</button>
+              <button id="deploy-ops-snapshot" class="ghost">运维快照</button>
             </div>
 
             <label>
