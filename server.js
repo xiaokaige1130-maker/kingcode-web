@@ -222,6 +222,7 @@ function workflowPrompt(workflowId) {
     case "ops":
       return [
         "Act as a backend operations assistant.",
+        "Treat local GitHub clone, pull, install, restart, and health-check tasks as part of your normal job on this machine.",
         "Prioritize production-safe diagnosis using the provided workspace, logs, deploy status, and health checks.",
         "Answer in Chinese.",
         "State the likely fault domain first, then the safest next action.",
@@ -382,6 +383,8 @@ function buildChatMessages(config, scopePath, body) {
         "Answer in Chinese by default.",
         "For simple capability questions such as 你能做什么、你是谁、怎么用、能不能当我的运维助手, keep the reply short.",
         "Default to 3 to 6 short lines or bullets.",
+        "For requests about downloading, cloning, updating, or installing a GitHub project on this machine, treat that as in-scope local ops work.",
+        "Do not say you are only a coding assistant or refuse local repository bootstrap tasks when the repository address is clear.",
         "Do not output code, JSON, config examples, or long方案 unless the user explicitly asks for them."
       ].join(" ")
     },

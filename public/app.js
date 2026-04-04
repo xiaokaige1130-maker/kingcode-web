@@ -358,14 +358,6 @@ function addMessage(role, content) {
   renderMessages();
 }
 
-function updateLastMessage(content) {
-  if (state.messages.length === 0) {
-    return;
-  }
-  state.messages[state.messages.length - 1].content = content;
-  renderMessages();
-}
-
 async function submitChatFallback(payload) {
   const data = await request("/api/chat", {
     method: "POST",
@@ -682,7 +674,7 @@ function newProfile() {
 
 function deleteProfile() {
   if (state.config.profiles.length === 1) {
-    addMessage("system", "At least one profile must remain.");
+    addMessage("system", "至少保留一个模型配置。");
     return;
   }
 
@@ -695,7 +687,7 @@ function deleteProfile() {
 
 async function saveCurrentFile() {
   if (!state.currentFilePath) {
-    addMessage("system", "Open a file before saving.");
+    addMessage("system", "请先打开一个文件。");
     return;
   }
 
@@ -765,7 +757,7 @@ async function runCommand() {
   state.recentCommandOutput = result.combined;
   renderScopeSummary(result.scopeRoot || "");
   els.commandOutput.textContent = result.combined || "(no output)";
-  addMessage("system", `Command finished with code ${result.code}.`);
+  addMessage("system", `命令执行完成，退出码 ${result.code}。`);
 }
 
 async function loadGitStatus() {
@@ -1061,7 +1053,7 @@ async function syncFromRemote() {
 async function rollbackDeploy() {
   const commit = els.deployRollbackCommit.value.trim();
   if (!commit) {
-    addMessage("system", "Enter a rollback commit first.");
+    addMessage("system", "请先填写要回滚的提交号。");
     return;
   }
 
@@ -1100,76 +1092,9 @@ async function submitChat(event) {
   };
 
   try {
-    addMessage("assistant", "");
-
-    const response = await fetch("/api/chat/stream", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json"
-      },
-      body: JSON.stringify(payload)
-    });
-
-    if (!response.ok || !response.body) {
-      state.messages.pop();
-      renderMessages();
-      await submitChatFallback(payload);
-      return;
-    }
-
-    const reader = response.body.getReader();
-    const decoder = new TextDecoder();
-    let buffer = "";
-    let assistantContent = "";
-
-    while (true) {
-      const { value, done } = await reader.read();
-      buffer += decoder.decode(value || new Uint8Array(), { stream: !done });
-
-      let boundary = buffer.indexOf("\n\n");
-      while (boundary !== -1) {
-        const rawEvent = buffer.slice(0, boundary);
-        buffer = buffer.slice(boundary + 2);
-
-        const dataLine = rawEvent
-          .split("\n")
-          .find((line) => line.startsWith("data:"));
-
-        if (dataLine) {
-          const payload = JSON.parse(dataLine.slice(5).trim());
-          if (payload.type === "token") {
-            assistantContent += payload.token || "";
-            updateLastMessage(assistantContent);
-          } else if (payload.type === "done") {
-            renderScopeSummary(payload.scopeRoot || "");
-            updateLastMessage(payload.content || assistantContent);
-          } else if (payload.type === "error") {
-            throw new Error(payload.error || "聊天流式请求失败。");
-          }
-        }
-
-        boundary = buffer.indexOf("\n\n");
-      }
-
-      if (done) {
-        if (!assistantContent.trim()) {
-          state.messages.pop();
-          renderMessages();
-          await submitChatFallback(payload);
-        }
-        break;
-      }
-    }
+    await submitChatFallback(payload);
   } catch (error) {
-    if (state.messages[state.messages.length - 1]?.role === "assistant") {
-      state.messages.pop();
-      renderMessages();
-    }
-    try {
-      await submitChatFallback(payload);
-    } catch (fallbackError) {
-      addMessage("system", fallbackError.message || error.message);
-    }
+    addMessage("system", error.message);
   }
 }
 
@@ -1285,7 +1210,6 @@ async function bootstrapApp() {
   renderProfileOptions();
   renderProfileForm();
   renderHeaderMeta();
-  bindEvents();
   activateToolPanel("editor");
   applyDeployPreset();
   await loadTree(".");
@@ -1307,10 +1231,14 @@ async function init() {
   await loadAuthStatus();
   if (state.auth?.authenticated && !state.auth.mustChangePassword) {
     hideAuthGate();
-    await bootstrapApp();
+    try {
+      await bootstrapApp();
+    } catch (error) {
+      addMessage("system", error.message);
+    }
   }
 }
 
 init().catch((error) => {
-  showAuthGate(error.message);
+  addMessage("system", error.message);
 });
