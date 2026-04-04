@@ -271,7 +271,7 @@ function applyDeployPreset() {
   }
   els.deployLogSource.value = "pm2";
   if (!els.deployHealthUrl.value.trim()) {
-    els.deployHealthUrl.value = "http://127.0.0.1:3001/api/health";
+    els.deployHealthUrl.value = "http://127.0.0.1:4780/api/health";
   }
 }
 
