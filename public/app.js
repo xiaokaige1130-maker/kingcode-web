@@ -1,5 +1,7 @@
 const state = {
   config: null,
+  auth: null,
+  bootstrapped: false,
   scopePath: ".",
   currentPath: ".",
   currentFilePath: "",
@@ -32,6 +34,14 @@ const SKILL_SOURCE_LABELS = {
 };
 
 const els = {
+  authGate: document.querySelector("#auth-gate"),
+  authMessage: document.querySelector("#auth-message"),
+  loginForm: document.querySelector("#login-form"),
+  loginUsername: document.querySelector("#login-username"),
+  loginPassword: document.querySelector("#login-password"),
+  changePasswordForm: document.querySelector("#change-password-form"),
+  currentPassword: document.querySelector("#current-password"),
+  newPassword: document.querySelector("#new-password"),
   profileSelect: document.querySelector("#profile-select"),
   profileName: document.querySelector("#profile-name"),
   profileType: document.querySelector("#profile-type"),
@@ -39,6 +49,9 @@ const els = {
   profilePath: document.querySelector("#profile-path"),
   profileModel: document.querySelector("#profile-model"),
   profileApiKey: document.querySelector("#profile-api-key"),
+  allowPublicAccess: document.querySelector("#allow-public-access"),
+  listenPort: document.querySelector("#listen-port"),
+  accessSummary: document.querySelector("#access-summary"),
   profileHeaders: document.querySelector("#profile-headers"),
   profileBody: document.querySelector("#profile-body"),
   profileResponsePath: document.querySelector("#profile-response-path"),
@@ -53,6 +66,7 @@ const els = {
   skillsList: document.querySelector("#skills-list"),
   capabilitiesSummary: document.querySelector("#capabilities-summary"),
   capabilitiesOutput: document.querySelector("#capabilities-output"),
+  authStatus: document.querySelector("#auth-status"),
   messages: document.querySelector("#messages"),
   messageInput: document.querySelector("#message-input"),
   chatForm: document.querySelector("#chat-form"),
@@ -84,6 +98,10 @@ const els = {
   deployOutput: document.querySelector("#deploy-output"),
   messageTemplate: document.querySelector("#message-template"),
   saveConfig: document.querySelector("#save-config"),
+  savePassword: document.querySelector("#save-password"),
+  logout: document.querySelector("#logout"),
+  settingsCurrentPassword: document.querySelector("#settings-current-password"),
+  settingsNewPassword: document.querySelector("#settings-new-password"),
   deleteProfile: document.querySelector("#delete-profile"),
   newProfile: document.querySelector("#new-profile"),
   applyScope: document.querySelector("#apply-scope"),
@@ -126,9 +144,42 @@ async function request(url, options = {}) {
 
   const payload = await response.json();
   if (!response.ok) {
+    if (response.status === 401) {
+      state.auth = { authenticated: false };
+      showAuthGate("登录已失效，请重新登录。");
+    }
     throw new Error(payload.error || "Request failed.");
   }
   return payload;
+}
+
+function showAuthGate(message = "") {
+  els.authGate.classList.remove("hidden");
+  els.authMessage.textContent = message;
+}
+
+function hideAuthGate() {
+  els.authGate.classList.add("hidden");
+  els.authMessage.textContent = "";
+}
+
+function renderAuthState() {
+  const username = state.auth?.username || "kingcode";
+  const mustChangePassword = Boolean(state.auth?.mustChangePassword);
+  els.authStatus.textContent = mustChangePassword
+    ? `当前账号：${username}（首次登录后请修改密码）`
+    : `当前账号：${username}`;
+  els.changePasswordForm.classList.toggle("hidden", !mustChangePassword);
+  els.loginForm.classList.toggle("hidden", Boolean(state.auth?.authenticated && mustChangePassword));
+}
+
+function renderAccessSettings() {
+  const allowPublicAccess = Boolean(state.config?.allowPublicAccess);
+  const listenHost = allowPublicAccess ? "0.0.0.0" : "127.0.0.1";
+  const listenPort = Number(state.config?.listenPort) || 4780;
+  els.allowPublicAccess.value = String(allowPublicAccess);
+  els.listenPort.value = String(listenPort);
+  els.accessSummary.textContent = `当前监听：${listenHost}:${listenPort}`;
 }
 
 function activeProfile() {
@@ -252,6 +303,8 @@ function renderProfileForm() {
   els.profileHeaders.value = profile.headersTemplate || "{}";
   els.profileBody.value = profile.bodyTemplate || "";
   els.profileResponsePath.value = profile.responsePath || "";
+  renderAccessSettings();
+  renderAuthState();
   renderHeaderMeta();
 }
 
@@ -381,6 +434,11 @@ function renderCapabilities(data) {
     "范围规则：",
     ...(data.scopeRules || []).map((item) => `- ${item}`),
     "",
+    "访问方式：",
+    `- 公网访问：${data.access?.allowPublicAccess ? "开启" : "关闭"}`,
+    `- 监听地址：${data.access?.listenHost || "-"}`,
+    `- 监听端口：${data.access?.listenPort || "-"}`,
+    "",
     "限制说明：",
     ...(data.limits || []).map((item) => `- ${item}`)
   ].join("\n");
@@ -485,6 +543,87 @@ async function loadCapabilities() {
   renderCapabilities(data);
 }
 
+async function loadAuthStatus() {
+  const response = await fetch("/api/auth/status");
+  const payload = await response.json();
+  state.auth = payload;
+  renderAuthState();
+  if (payload.authenticated) {
+    if (payload.mustChangePassword) {
+      showAuthGate("首次登录请先修改默认密码。");
+    } else {
+      hideAuthGate();
+    }
+  } else {
+    showAuthGate("请先登录。");
+  }
+  return payload;
+}
+
+async function login(event) {
+  event.preventDefault();
+  const payload = await request("/api/auth/login", {
+    method: "POST",
+    body: JSON.stringify({
+      username: els.loginUsername.value.trim(),
+      password: els.loginPassword.value
+    })
+  });
+  state.auth = payload;
+  renderAuthState();
+  if (payload.mustChangePassword) {
+    els.currentPassword.value = els.loginPassword.value;
+    els.newPassword.value = "";
+    showAuthGate("首次登录请先修改默认密码。");
+    return;
+  }
+  hideAuthGate();
+  els.loginPassword.value = "";
+  await bootstrapApp();
+}
+
+async function submitForcedPasswordChange(event) {
+  event.preventDefault();
+  const payload = await request("/api/auth/password", {
+    method: "POST",
+    body: JSON.stringify({
+      currentPassword: els.currentPassword.value,
+      nextPassword: els.newPassword.value
+    })
+  });
+  state.auth = payload;
+  renderAuthState();
+  hideAuthGate();
+  els.loginPassword.value = "";
+  els.currentPassword.value = "";
+  els.newPassword.value = "";
+  await bootstrapApp();
+}
+
+async function savePassword() {
+  const payload = await request("/api/auth/password", {
+    method: "POST",
+    body: JSON.stringify({
+      currentPassword: els.settingsCurrentPassword.value,
+      nextPassword: els.settingsNewPassword.value
+    })
+  });
+  state.auth = payload;
+  renderAuthState();
+  els.settingsCurrentPassword.value = "";
+  els.settingsNewPassword.value = "";
+  addMessage("system", "密码已更新。");
+}
+
+async function logout() {
+  await request("/api/auth/logout", {
+    method: "POST",
+    body: JSON.stringify({})
+  });
+  state.auth = { authenticated: false };
+  showAuthGate("已退出登录。");
+}
+
 function syncIncludeCheckbox() {
   els.includeFile.checked = state.currentFilePath ? state.selectedFiles.has(state.currentFilePath) : false;
 }
@@ -502,6 +641,8 @@ async function openFile(relativePath) {
 async function saveConfig() {
   syncActiveProfileFromForm();
   state.config.workspaceRoot = els.workspaceRoot.value.trim();
+  state.config.allowPublicAccess = els.allowPublicAccess.value === "true";
+  state.config.listenPort = Number(els.listenPort.value) || 4780;
   state.config.systemPrompt = els.systemPrompt.value.trim();
   state.config = await request("/api/config", {
     method: "POST",
@@ -512,7 +653,9 @@ async function saveConfig() {
   renderProfileOptions();
   renderProfileForm();
   renderScopeSummary(state.config.workspaceRoot);
-  addMessage("system", "配置已保存。");
+  addMessage("system", state.config.restartRequired
+    ? "配置已保存。监听地址或端口修改后需要重启 KingCode 才会生效。"
+    : "配置已保存。");
   await loadTree(".");
   await loadSkills();
 }
@@ -1031,6 +1174,16 @@ async function submitChat(event) {
 }
 
 function bindEvents() {
+  els.loginForm.addEventListener("submit", (event) => {
+    login(event).catch((error) => {
+      showAuthGate(error.message);
+    });
+  });
+  els.changePasswordForm.addEventListener("submit", (event) => {
+    submitForcedPasswordChange(event).catch((error) => {
+      showAuthGate(error.message);
+    });
+  });
   els.profileSelect.addEventListener("change", () => {
     syncActiveProfileFromForm();
     state.config.activeProfileId = els.profileSelect.value;
@@ -1039,6 +1192,12 @@ function bindEvents() {
   });
 
   els.saveConfig.addEventListener("click", saveConfig);
+  els.savePassword.addEventListener("click", () => {
+    savePassword().catch((error) => addMessage("system", error.message));
+  });
+  els.logout.addEventListener("click", () => {
+    logout().catch((error) => addMessage("system", error.message));
+  });
   els.newProfile.addEventListener("click", newProfile);
   els.deleteProfile.addEventListener("click", deleteProfile);
   els.applyScope.addEventListener("click", () => {
@@ -1113,7 +1272,11 @@ function bindEvents() {
   });
 }
 
-async function init() {
+async function bootstrapApp() {
+  if (state.bootstrapped) {
+    return;
+  }
+
   state.config = await request("/api/config");
   state.scopePath = ".";
   els.workspaceRoot.value = state.config.workspaceRoot;
@@ -1134,9 +1297,20 @@ async function init() {
     els.gitSummary.textContent = error.message;
     els.gitStatusOutput.textContent = "";
   }
+  state.bootstrapped = true;
   addMessage("system", "KingCode 已就绪。");
 }
 
+async function init() {
+  bindEvents();
+  activateToolPanel("editor");
+  await loadAuthStatus();
+  if (state.auth?.authenticated && !state.auth.mustChangePassword) {
+    hideAuthGate();
+    await bootstrapApp();
+  }
+}
+
 init().catch((error) => {
-  addMessage("system", error.message);
+  showAuthGate(error.message);
 });

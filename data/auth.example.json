@@ -1,0 +1,5 @@
+{
+  "username": "kingcode",
+  "passwordHint": "Default password is kingcode. The real auth.json stores only a hash and is generated locally on first run.",
+  "mustChangePassword": true
+}

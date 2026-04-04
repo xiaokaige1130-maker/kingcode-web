@@ -7,6 +7,40 @@
     <link rel="stylesheet" href="/styles.css">
   </head>
   <body>
+    <div id="auth-gate" class="auth-gate">
+      <section class="auth-card">
+        <h2>登录 KingCode</h2>
+        <p class="hint">默认账号密码都是 <code>kingcode</code>。首次登录后建议立即修改密码。</p>
+        <form id="login-form" class="auth-form">
+          <label>
+            <span>用户名</span>
+            <input id="login-username" type="text" value="kingcode" autocomplete="username">
+          </label>
+          <label>
+            <span>密码</span>
+            <input id="login-password" type="password" value="kingcode" autocomplete="current-password">
+          </label>
+          <div class="button-row">
+            <button type="submit">登录</button>
+          </div>
+        </form>
+        <form id="change-password-form" class="auth-form hidden">
+          <label>
+            <span>当前密码</span>
+            <input id="current-password" type="password" autocomplete="current-password">
+          </label>
+          <label>
+            <span>新密码</span>
+            <input id="new-password" type="password" autocomplete="new-password">
+          </label>
+          <div class="button-row">
+            <button type="submit">修改密码并继续</button>
+          </div>
+        </form>
+        <div id="auth-message" class="hint"></div>
+      </section>
+    </div>
+
     <div class="app-shell">
       <aside class="sidebar left-sidebar">
         <div class="sidebar-header brand-panel">
@@ -66,6 +100,27 @@
             </label>
 
             <details class="fold">
+              <summary>访问与启动</summary>
+
+              <label>
+                <span>公网访问模式</span>
+                <select id="allow-public-access">
+                  <option value="true">开启：监听 0.0.0.0，允许公网 IP + 端口访问</option>
+                  <option value="false">关闭：仅监听 127.0.0.1，适合 Nginx 反向代理</option>
+                </select>
+              </label>
+
+              <label>
+                <span>监听端口</span>
+                <input id="listen-port" type="number" min="1" max="65535" value="4780">
+              </label>
+
+              <div id="access-summary" class="status-pill">当前监听：0.0.0.0:4780</div>
+
+              <div class="hint">修改监听地址或端口后，需要重启 KingCode 服务才能生效。</div>
+            </details>
+
+            <details class="fold">
               <summary>高级模板</summary>
 
               <label>
@@ -87,6 +142,25 @@
             <div class="button-row">
               <button id="save-config">保存配置</button>
               <button id="delete-profile" class="ghost">删除</button>
+            </div>
+          </section>
+
+          <section class="panel-card">
+            <div class="section-head">
+              <h2>账号安全</h2>
+            </div>
+            <div id="auth-status" class="status-pill">当前账号：kingcode</div>
+            <label>
+              <span>当前密码</span>
+              <input id="settings-current-password" type="password" autocomplete="current-password">
+            </label>
+            <label>
+              <span>新密码</span>
+              <input id="settings-new-password" type="password" autocomplete="new-password">
+            </label>
+            <div class="button-row">
+              <button id="save-password">修改密码</button>
+              <button id="logout" class="ghost">退出登录</button>
             </div>
           </section>
 

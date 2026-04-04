@@ -1,0 +1,22 @@
+{
+  "workspaceRoot": "",
+  "activeProfileId": "openai-compatible",
+  "listenHost": "0.0.0.0",
+  "listenPort": 4780,
+  "allowPublicAccess": true,
+  "systemPrompt": "You are KingCode, a pragmatic coding assistant.",
+  "profiles": [
+    {
+      "id": "openai-compatible",
+      "name": "OpenAI Compatible",
+      "type": "openai-compatible",
+      "baseUrl": "https://api.openai.com",
+      "path": "/v1/chat/completions",
+      "model": "gpt-4.1-mini",
+      "apiKey": "",
+      "method": "POST",
+      "headersTemplate": "{}",
+      "bodyTemplate": ""
+    }
+  ]
+}

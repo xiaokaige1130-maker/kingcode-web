@@ -163,6 +163,45 @@ The deployment panel is designed for the machine KingCode is running on. It does
 
 Rollback currently uses `git reset --hard <commit>` inside the selected project path, then optionally reinstalls, rebuilds, and restarts the service. Use it only when that repository state is safe to discard locally.
 
+## Remote Access And First-Run Security
+
+KingCode now supports a simple first-run auth flow for Web access:
+
+- default username: `kingcode`
+- default password: `kingcode`
+- first login should immediately change the password
+
+Runtime settings are local-only and not meant to be committed:
+
+- `data/providers.json`
+- `data/auth.json`
+
+Tracked example templates are provided instead:
+
+- `data/providers.example.json`
+- `data/auth.example.json`
+
+The Web UI also lets you choose between:
+
+- public access mode: listen on `0.0.0.0`
+- reverse-proxy mode: listen on `127.0.0.1`
+
+Changing host or port requires a KingCode restart.
+
+## Install And Update Scripts
+
+Basic scripts are included for direct install or update:
+
+- Linux install: `scripts/install.sh`
+- Linux update: `scripts/update.sh`
+- Windows install: `scripts/install.ps1`
+- Windows update: `scripts/update.ps1`
+
+Deployment examples are also included:
+
+- PM2: `deploy/ecosystem.config.js`
+- Nginx reverse proxy: `deploy/nginx/kingcode.conf`
+
 ## Provider model
 
 Profiles are stored in `data/providers.json`. The `generic-json` adapter is the escape hatch for providers that do not match OpenAI, Anthropic, or Gemini directly.

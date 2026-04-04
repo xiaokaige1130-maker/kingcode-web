@@ -1,10 +1,12 @@
 const http = require("http");
 const path = require("path");
 const fs = require("fs");
+const crypto = require("crypto");
 const { exec } = require("child_process");
 const { URL } = require("url");
 
 const { loadConfig, saveConfig } = require("./lib/config");
+const { changePassword, loadAuthConfig, verifyPassword } = require("./lib/auth");
 const {
   collectOpsSnapshot,
   cloneRepository,
@@ -37,7 +39,11 @@ const {
 } = require("./lib/workspace");
 
 const PUBLIC_DIR = path.join(__dirname, "public");
-const PORT = Number(process.env.PORT || 4780);
+const runtimeConfig = loadConfig();
+const HOST = process.env.HOST || runtimeConfig.listenHost || "0.0.0.0";
+const PORT = Number(process.env.PORT || runtimeConfig.listenPort || 4780);
+const SESSION_TTL_MS = 1000 * 60 * 60 * 12;
+const sessions = new Map();
 
 function sendJson(response, statusCode, payload) {
   response.writeHead(statusCode, {
@@ -45,6 +51,10 @@ function sendJson(response, statusCode, payload) {
     "Cache-Control": "no-store"
   });
   response.end(JSON.stringify(payload));
+}
+
+function unauthorized(response, error = "Authentication required.") {
+  sendJson(response, 401, { error });
 }
 
 function sendText(response, statusCode, payload, contentType = "text/plain; charset=utf-8") {
@@ -76,6 +86,78 @@ function parseBody(request) {
 
     request.on("error", reject);
   });
+}
+
+function parseCookies(request) {
+  const source = String(request.headers.cookie || "");
+  return Object.fromEntries(source
+    .split(";")
+    .map((part) => part.trim())
+    .filter(Boolean)
+    .map((part) => {
+      const index = part.indexOf("=");
+      if (index === -1) {
+        return [part, ""];
+      }
+      return [part.slice(0, index), decodeURIComponent(part.slice(index + 1))];
+    }));
+}
+
+function createSession(username) {
+  const token = crypto.randomBytes(24).toString("hex");
+  sessions.set(token, {
+    username,
+    expiresAt: Date.now() + SESSION_TTL_MS
+  });
+  return token;
+}
+
+function readSession(request) {
+  const token = parseCookies(request).kingcode_session;
+  if (!token) {
+    return null;
+  }
+
+  const session = sessions.get(token);
+  if (!session) {
+    return null;
+  }
+
+  if (session.expiresAt < Date.now()) {
+    sessions.delete(token);
+    return null;
+  }
+
+  session.expiresAt = Date.now() + SESSION_TTL_MS;
+  return {
+    token,
+    ...session
+  };
+}
+
+function setSessionCookie(response, token) {
+  response.setHeader("Set-Cookie", `kingcode_session=${encodeURIComponent(token)}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${Math.floor(SESSION_TTL_MS / 1000)}`);
+}
+
+function clearSessionCookie(response) {
+  response.setHeader("Set-Cookie", "kingcode_session=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0");
+}
+
+function isPublicApiRoute(pathname) {
+  return pathname === "/api/health"
+    || pathname === "/api/auth/status"
+    || pathname === "/api/auth/login";
+}
+
+function buildAuthStatus(request, overrides = {}) {
+  const auth = loadAuthConfig();
+  const session = readSession(request);
+  return {
+    authenticated: typeof overrides.authenticated === "boolean" ? overrides.authenticated : Boolean(session),
+    username: auth.username,
+    mustChangePassword: auth.mustChangePassword,
+    publicAccessEnabled: loadConfig().allowPublicAccess
+  };
 }
 
 function getMimeType(filePath) {
@@ -227,10 +309,14 @@ function buildCapabilities(config) {
       "没有内建 SSH 远程主机管理或多机集群管理",
       "没有内建告警中心、定时任务编排或监控大盘",
       "没有原生多智能体协作",
-      "Web 端回复目前不是流式显示",
       "运维模式默认只讲人话结论，不会主动输出代码，除非你明确要求",
       "这个助手主要面向和 KingCode 运行在同一台 Ubuntu 机器上的服务"
-    ]
+    ],
+    access: {
+      allowPublicAccess: Boolean(config.allowPublicAccess),
+      listenHost: config.listenHost,
+      listenPort: config.listenPort
+    }
   };
 }
 
@@ -322,6 +408,62 @@ async function handleApi(request, response, requestUrl) {
       return;
     }
 
+    if (request.method === "GET" && requestUrl.pathname === "/api/auth/status") {
+      sendJson(response, 200, buildAuthStatus(request));
+      return;
+    }
+
+    if (request.method === "POST" && requestUrl.pathname === "/api/auth/login") {
+      const body = await parseBody(request);
+      const auth = loadAuthConfig();
+      const username = String(body.username || "").trim();
+      const password = String(body.password || "");
+
+      if (username !== auth.username || !verifyPassword(password, auth.passwordHash)) {
+        unauthorized(response, "Invalid username or password.");
+        return;
+      }
+
+      const token = createSession(auth.username);
+      setSessionCookie(response, token);
+      sendJson(response, 200, buildAuthStatus(request, { authenticated: true }));
+      return;
+    }
+
+    if (!isPublicApiRoute(requestUrl.pathname)) {
+      const session = readSession(request);
+      if (!session) {
+        unauthorized(response);
+        return;
+      }
+    }
+
+    if (request.method === "POST" && requestUrl.pathname === "/api/auth/logout") {
+      const session = readSession(request);
+      if (session) {
+        sessions.delete(session.token);
+      }
+      clearSessionCookie(response);
+      sendJson(response, 200, { ok: true });
+      return;
+    }
+
+    if (request.method === "POST" && requestUrl.pathname === "/api/auth/password") {
+      const body = await parseBody(request);
+      const auth = loadAuthConfig();
+      const currentPassword = String(body.currentPassword || "");
+      const nextPassword = String(body.nextPassword || "");
+
+      if (!verifyPassword(currentPassword, auth.passwordHash)) {
+        sendJson(response, 400, { error: "Current password is incorrect." });
+        return;
+      }
+
+      changePassword(nextPassword);
+      sendJson(response, 200, buildAuthStatus(request, { authenticated: true }));
+      return;
+    }
+
     if (request.method === "GET" && requestUrl.pathname === "/api/config") {
       sendJson(response, 200, loadConfig());
       return;
@@ -345,8 +487,13 @@ async function handleApi(request, response, requestUrl) {
     }
 
     if (request.method === "POST" && requestUrl.pathname === "/api/config") {
+      const current = loadConfig();
       const body = await parseBody(request);
-      sendJson(response, 200, saveConfig(body));
+      const saved = saveConfig(body);
+      sendJson(response, 200, {
+        ...saved,
+        restartRequired: current.listenHost !== saved.listenHost || current.listenPort !== saved.listenPort
+      });
       return;
     }
 
