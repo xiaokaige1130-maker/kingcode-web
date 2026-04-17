@@ -1,261 +1,65 @@
-# KingCode
+# KingCode Web
 
-中文使用说明请看：
+## 项目简介
 
-[`docs/使用说明.md`](C:/Users/云电脑/Desktop/omnicode-web/docs/使用说明.md)
+KingCode Web 是一个本地优先的 AI 编码助手项目，提供浏览器界面和命令行两种使用方式。
 
-KingCode is a local coding assistant with a browser UI. It was designed as a practical alternative to Claude Code's public extension model, while staying provider-agnostic so you can connect different AI APIs instead of being locked to one backend.
+它的目标不是复制某个闭源产品本体，而是把“工作流、技能、文件操作、命令执行、模型接入”这些核心能力整理成一套可自托管、可替换模型提供商的开发工具。
 
-## What the public Claude Code repo actually exposes
+## 适合做什么
 
-The repository at `anthropics/claude-code` does not currently expose the whole Claude Code runtime. What it does expose clearly is the extension architecture around the product:
+- 在本地或服务器上运行一个带网页界面的 AI 编码助手
+- 为不同模型供应商统一配置 API 调用方式
+- 在指定工作目录里浏览文件、编辑文件、运行命令
+- 通过工作流预设快速切换分析、计划、实现、运维等模式
+- 作为后续扩展插件、技能、部署面板的基础工程
 
-- `commands`: markdown-driven workflows
-- `agents`: prompt-specialized roles
-- `skills`: reusable behavior packs
-- `hooks`: event-based guardrails
-- `plugins`: packaging for teams and marketplaces
+## 当前功能
 
-That means the best reproducible path is not "clone the hidden core", but "rebuild the mechanism":
+- Web UI 与 CLI 双入口
+- 多模型供应商接入
+- 工作区浏览与文件编辑
+- 命令执行与 Git 辅助操作
+- 技能加载与作用域管理
+- 基础部署辅助面板
+- 本地账号登录与首启安全设置
 
-- a configurable model provider layer
-- workspace-aware prompt injection
-- file and command tools
-- workflow presets that act like slash commands
-- a visual shell instead of a terminal-only UX
+## 技术结构
 
-## What this project includes
+- `server.js`：本地服务入口
+- `web/`：浏览器端界面
+- `cli/`：命令行相关能力
+- `skills/`：可复用技能与行为包
+- `deploy/`：部署示例与配置
+- `scripts/`：安装、更新和辅助脚本
 
-- A zero-dependency Node.js server
-- A local Web UI at `http://localhost:4780`
-- Provider profiles for:
-  - OpenAI-compatible APIs
-  - Anthropic
-  - Gemini
-  - Generic JSON APIs
-- Workspace browser and file editor
-- Command runner scoped to the chosen workspace root
-- Workflow presets: `Analyze`, `Plan`, `Review`, `Implement`, `Ops`
-
-## Quick start
+## 快速开始
 
 ```bash
-cd omnicode-web
+npm install
 npm start
 ```
 
-Then open `http://localhost:4780`.
+启动后访问：`http://localhost:4780`
 
-## Terminal mode
+CLI 模式：
 
 ```bash
-cd omnicode-web
 npm run cli
 ```
 
-CLI commands:
+## 当前定位说明
 
-- `/help`
-- `/status`
-- `/profiles`
-- `/profile <id>`
-- `/workflow <id>`
-- `/scope [path]`
-- `/skills`
-- `/skillinfo <id>`
-- `/skill <id>`
-- `/unskill <id>`
-- `/tree [path]`
-- `/ls [path]`
-- `/open <path>`
-- `/exclude <path>`
-- `/files`
-- `/include <path>`
-- `/write <path>`
-- `/run <command>`
-- `/git status`
-- `/git commit <message>`
-- `/git push`
-- `/clearcmd`
+这个仓库更偏“本地 AI 开发工作台”而不是单一聊天应用。
 
-Plain text input sends a chat request using the active workflow plus any included files and recent command output.
+如果你以后翻到这个仓库，记住一句话就够了：
 
-`Ops` is tuned for backend maintenance and incident response on the same Ubuntu machine where KingCode is running. It pushes the model to reason from service status, logs, health checks, and recent commits before recommending action.
+> 这是你自己的网页版本地 AI 编码助手项目。
 
-For `openai-compatible` providers such as `DeepSeek`, the CLI prints tokens incrementally instead of waiting for the full response.
+## 后续建议
 
-## Skills and Scope
+后面如果继续整理，优先补这三类内容：
 
-KingCode can discover skills from:
-
-- `./skills/<name>/SKILL.md`
-- `<workspace>/skills/<name>/SKILL.md`
-- `<workspace>/.claude/skills/<name>/SKILL.md`
-
-Web mode lets you select skills from the sidebar. CLI mode supports `/skills`, `/skill <id>`, and `/unskill <id>`.
-
-Both Web and CLI also support a scoped working area inside the configured workspace root:
-
-- Web: set `Scope Path` in the workspace card
-- CLI: use `/scope <path>`
-
-File browsing, command execution, selected files, and skill discovery all follow the active scope.
-
-The repository also ships with a `backend-ops` skill under [`skills/backend-ops/SKILL.md`](./skills/backend-ops/SKILL.md). Enable it when you want stricter production-triage behavior.
-
-Additional adapted skills are also available under [`skills/`](./skills/) and can be toggled from the Web sidebar or discovered in CLI with `/skills`:
-
-- `app:sentry-readonly`
-- `app:github-actions-ci`
-- `app:security-review`
-- `app:docker-compose-audit`
-- `app:secrets-audit`
-- `app:stack-readiness`
-
-These were adapted from public GitHub skills and rewritten to fit KingCode's current local-ops workflow rather than Codex-specific runtime assumptions.
-
-## Git helpers
-
-KingCode now includes minimal Git helpers on top of the existing command runner.
-
-- CLI:
-  - `/git status`
-  - `/git commit <message>`
-  - `/git push`
-  - `/ops snapshot`
-  - `/ops services`
-  - `/ops audit`
-  - `/ops sync [branch]`
-- Web:
-  - a `Git Panel` in the right sidebar with status, commit, and push actions
-  - an `Ops` workflow chip for operations-oriented analysis
-
-These helpers still rely on local Git configuration and credentials. They do not create GitHub repositories or manage authentication for you.
-
-## Deploy helpers
-
-KingCode also includes a first-pass deployment panel for local or current-server maintenance.
-
-- Web `Deploy Panel` supports:
-  - cloning a Git repository into the active workspace scope
-  - running an install command such as `npm install` or `pip install -r requirements.txt`
-  - creating a PM2 service for common Node.js start modes
-  - creating a systemd service on Linux
-  - loading PM2, systemd, or Docker Compose logs
-  - running common Docker Compose actions
-  - running a health check against a target URL
-  - reading recent deployment history stored by KingCode
-  - reading recent Git commits for a deployed project
-  - rolling a project back to a chosen Git commit
-  - updating an existing project by running `git pull`, install, build, and PM2 restart
-  - reading basic project and PM2 status
-  - collecting a combined backend operations snapshot that can be sent straight into chat context
-  - listing local PM2, systemd, Docker, and Docker Compose services
-  - running a one-shot local ops audit with logs, ports, disk, memory, and service status
-  - syncing a deployed project from its configured Git remote and verifying status after update
-
-- Presets:
-  - `Node Web`
-  - `Python Bot`
-  - `Docker Compose`
-
-The deployment panel is designed for the machine KingCode is running on. It does not add SSH or remote host management.
-
-Rollback currently uses `git reset --hard <commit>` inside the selected project path, then optionally reinstalls, rebuilds, and restarts the service. Use it only when that repository state is safe to discard locally.
-
-## Remote Access And First-Run Security
-
-KingCode now supports a simple first-run auth flow for Web access:
-
-- default username: `kingcode`
-- default password: `kingcode`
-- first login should immediately change the password
-
-Runtime settings are local-only and not meant to be committed:
-
-- `data/providers.json`
-- `data/auth.json`
-
-Tracked example templates are provided instead:
-
-- `data/providers.example.json`
-- `data/auth.example.json`
-
-The Web UI also lets you choose between:
-
-- public access mode: listen on `0.0.0.0`
-- reverse-proxy mode: listen on `127.0.0.1`
-
-Changing host or port requires a KingCode restart.
-
-## Install And Update Scripts
-
-Basic scripts are included for direct install or update:
-
-- Linux install: `scripts/install.sh`
-- Linux update: `scripts/update.sh`
-- Windows install: `scripts/install.ps1`
-- Windows update: `scripts/update.ps1`
-
-Deployment examples are also included:
-
-- PM2: `deploy/ecosystem.config.js`
-- Nginx reverse proxy: `deploy/nginx/kingcode.conf`
-
-## Provider model
-
-Profiles are stored in `data/providers.json`. The `generic-json` adapter is the escape hatch for providers that do not match OpenAI, Anthropic, or Gemini directly.
-
-Supported body template tokens:
-
-- `{{api_key}}`
-- `{{model}}`
-- `{{model_json}}`
-- `{{system_prompt}}`
-- `{{system_prompt_json}}`
-- `{{last_user_message}}`
-- `{{last_user_message_json}}`
-- `{{messages_json}}`
-
-Example generic body:
-
-```json
-{
-  "model": {{model_json}},
-  "messages": {{messages_json}}
-}
-```
-
-Example generic response path:
-
-```text
-choices.0.message.content
-```
-
-## Technical mapping from Claude Code to this tool
-
-- `commands` -> workflow chips and prompt presets
-- `agents` -> model behavior defined by workflow plus system prompt
-- `skills` -> reusable prompt/system instructions in config
-- `hooks` -> easy next step would be request/response interceptors in `server.js`
-- `tools` -> file browser, editor, and command runner
-
-## Limits
-
-This is intentionally an MVP:
-
-- Web responses are still non-streaming
-- no multi-agent orchestration
-- no marketplace/plugin loader
-- no autonomous tool-calling loop
-
-Those can be added on top of the current adapter and workspace layers without replacing the architecture.
-
-## Capability list
-
-You can inspect the current built-in capability list in two places:
-
-- Web: the `能力清单` card in the left sidebar
-- CLI: run `/capabilities`
-
-This list is generated from the current application capabilities and limits, so it is a better operator-facing reference than reading source files directly.
+- 真实运行截图
+- 默认工作流说明
+- 供应商配置示例
